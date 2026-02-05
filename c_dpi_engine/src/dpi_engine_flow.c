@@ -70,6 +70,11 @@ flow_stats_t* get_or_create_flow(dpi_engine_t *engine,
     // Already zeroed by calloc
     strcpy(new_flow->protocol_name, "Unknown");
     
+    // Initialize protocol voting
+    new_flow->num_candidates = 0;
+    new_flow->protocol_confirmed = 0;
+    memset(new_flow->protocol_counts, 0, sizeof(new_flow->protocol_counts));
+    
     engine->flow_count++;
     engine->flows_created++;
     
@@ -158,9 +163,27 @@ void detect_protocol(dpi_engine_t *engine, parsed_packet_t *parsed) {
     
     flow_stats_t *flow = parsed->flow;
     
-    // Skip Ethernet header
-    uint32_t offset = 14;
-    if (parsed->layer2.has_vlan) offset = 18;
+    // Skip header based on datalink type
+    // For LINUX_SLL: 16 bytes, LINUX_SLL2: 20 bytes, Ethernet: 14 bytes
+    uint32_t offset = 14;  // Default for Ethernet
+    if (parsed->raw_data_len > 20) {
+        // Try to detect Linux cooked capture by checking protocol field
+        uint16_t arphrd_type = (parsed->raw_data[0] << 8) | parsed->raw_data[1];
+        if (arphrd_type == 1) {  // ARPHRD_ETHER - likely LINUX_SLL
+            offset = 16;  // LINUX_SLL header size
+        }
+        // Check for LINUX_SLL2 signature (protocol field at offset 10-11)
+        if (parsed->raw_data_len > 20 && parsed->raw_data[0] == 0x00 && parsed->raw_data[1] < 0x10) {
+            offset = 20;  // LINUX_SLL2 header size
+        }
+    }
+    if (parsed->layer2.has_vlan) offset += 4;
+    
+    // Ensure we don't go out of bounds
+    if (offset >= parsed->raw_data_len) {
+        strcpy(parsed->detected_protocol, "Unknown");
+        return;
+    }
     
     // Process packet with nDPI (nDPI 4.x API)
     flow->detected_protocol = ndpi_detection_process_packet(
@@ -171,38 +194,90 @@ void detect_protocol(dpi_engine_t *engine, parsed_packet_t *parsed) {
         (uint64_t)parsed->timestamp.tv_sec * 1000 + parsed->timestamp.tv_usec / 1000
     );
     
-    // Protocol detection enhancement - disabled to avoid segfault
-    // TODO: Investigate nDPI version compatibility issue
-    /*
-    if (flow->total_packets >= 8) {
-        uint8_t protocol_was_guessed = 0;
-        ndpi_protocol giveup_proto = ndpi_detection_giveup(
-            engine->ndpi,
-            flow->ndpi_flow,
-            1,
-            &protocol_was_guessed
-        );
-        
+    // Protocol detection enhancement - force detection after sufficient packets
+    if (flow->total_packets >= 10) {
         if (flow->detected_protocol.app_protocol == NDPI_PROTOCOL_UNKNOWN &&
             flow->detected_protocol.master_protocol == NDPI_PROTOCOL_UNKNOWN) {
+            uint8_t protocol_was_guessed = 0;
+            ndpi_protocol giveup_proto = ndpi_detection_giveup(
+                engine->ndpi,
+                flow->ndpi_flow,
+                1,
+                &protocol_was_guessed
+            );
             flow->detected_protocol = giveup_proto;
         }
     }
-    */
     
-    // Get protocol name string (nDPI 4.x API)
-    ndpi_protocol2name(engine->ndpi, flow->detected_protocol, 
-                       flow->protocol_name, sizeof(flow->protocol_name));
+    // Get protocol name string - prioritize custom parsers over nDPI
+    char current_protocol[64];
     
-    // If still unknown, mark it clearly
-    if (strlen(flow->protocol_name) == 0 ||
-        flow->detected_protocol.app_protocol == NDPI_PROTOCOL_UNKNOWN) {
-        snprintf(flow->protocol_name, sizeof(flow->protocol_name), "Unknown");
+    // Check if custom parser (MQTT port, etc.) already detected a protocol
+    if (strlen(parsed->detected_protocol) > 0 && 
+        strcmp(parsed->detected_protocol, "Unknown") != 0) {
+        // Use custom parser result (e.g., "MQTT-Port")
+        strncpy(current_protocol, parsed->detected_protocol, sizeof(current_protocol) - 1);
+        current_protocol[sizeof(current_protocol) - 1] = '\0';
+    } else {
+        // Fall back to nDPI detection
+        ndpi_protocol2name(engine->ndpi, flow->detected_protocol, 
+                           current_protocol, sizeof(current_protocol));
+        
+        // If still unknown at packet level, mark it
+        if (strlen(current_protocol) == 0 ||
+            (flow->detected_protocol.app_protocol == NDPI_PROTOCOL_UNKNOWN &&
+             flow->detected_protocol.master_protocol == NDPI_PROTOCOL_UNKNOWN)) {
+            snprintf(current_protocol, sizeof(current_protocol), "Unknown");
+        }
     }
     
-    // Copy to parsed packet
-    strncpy(parsed->detected_protocol, flow->protocol_name, 
-            sizeof(parsed->detected_protocol) - 1);
+    // Protocol voting: Track protocol detections and confirm if 5+ packets match
+    if (strcmp(current_protocol, "Unknown") != 0) {
+        // Find if this protocol already exists in candidates
+        int found_idx = -1;
+        for (uint32_t i = 0; i < flow->num_candidates; i++) {
+            if (strcmp(flow->candidate_protocols[i], current_protocol) == 0) {
+                found_idx = i;
+                break;
+            }
+        }
+        
+        if (found_idx >= 0) {
+            // Increment count for existing candidate
+            flow->protocol_counts[found_idx]++;
+            
+            // If this protocol appears 5+ times, confirm it as the flow protocol
+            if (!flow->protocol_confirmed && flow->protocol_counts[found_idx] >= 5) {
+                strncpy(flow->protocol_name, current_protocol, sizeof(flow->protocol_name) - 1);
+                flow->protocol_name[sizeof(flow->protocol_name) - 1] = '\0';
+                flow->protocol_confirmed = 1;
+            }
+        } else if (flow->num_candidates < 10) {
+            // Add new candidate protocol
+            strncpy(flow->candidate_protocols[flow->num_candidates], current_protocol, 
+                    sizeof(flow->candidate_protocols[0]) - 1);
+            flow->candidate_protocols[flow->num_candidates][sizeof(flow->candidate_protocols[0]) - 1] = '\0';
+            flow->protocol_counts[flow->num_candidates] = 1;
+            flow->num_candidates++;
+            
+            // If this is the first non-Unknown protocol detected, use it tentatively
+            if (flow->num_candidates == 1 && strcmp(flow->protocol_name, "Unknown") == 0) {
+                strncpy(flow->protocol_name, current_protocol, sizeof(flow->protocol_name) - 1);
+                flow->protocol_name[sizeof(flow->protocol_name) - 1] = '\0';
+            }
+        }
+    }
+    
+    // If protocol is confirmed, use it; otherwise use current detection or "Unknown"
+    if (flow->protocol_confirmed) {
+        // Flow protocol is confirmed, use it
+        strncpy(parsed->detected_protocol, flow->protocol_name, 
+                sizeof(parsed->detected_protocol) - 1);
+    } else {
+        // Not yet confirmed, use current packet's detection
+        strncpy(parsed->detected_protocol, current_protocol, 
+                sizeof(parsed->detected_protocol) - 1);
+    }
     parsed->detected_protocol[sizeof(parsed->detected_protocol) - 1] = '\0';
 }
 

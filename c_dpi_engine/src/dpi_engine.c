@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <pcap.h>
 #include <ndpi/ndpi_api.h>
 #include "dpi_engine.h"
 #include "mqtt_parser.h"
@@ -89,9 +90,69 @@ void dpi_engine_destroy(dpi_engine_t *engine) {
 
 /* ========== Layer 2 Parsing ========== */
 
+// Parse LINUX_SLL2 format (used by tcpdump on Linux when capturing on "any" interface)
+int parse_linux_sll2(const uint8_t *packet, uint32_t packet_len, layer2_info_t *l2, uint32_t *ip_offset) {
+    if (packet_len < 20) return -1;
+    
+    // LINUX_SLL2 header structure:
+    // 0-1: Protocol type
+    // 2-3: Reserved (MBZ)
+    // 4-7: Interface index
+    // 8-9: ARPHRD type
+    // 10: Packet type
+    // 11: Link-layer address length
+    // 12-19: Link-layer address (8 bytes)
+    // 20+: Protocol header
+    
+    uint16_t proto_type = (packet[0] << 8) | packet[1];
+    
+    // Clear MAC addresses for SLL2 (not always available)
+    memset(l2->src_mac, 0, 6);
+    memset(l2->dst_mac, 0, 6);
+    
+    // Extract link-layer address if available (usually MAC address for Ethernet)
+    uint8_t addr_len = packet[11];
+    if (addr_len >= 6) {
+        memcpy(l2->src_mac, packet + 12, 6);
+    }
+    
+    // Protocol type at offset 0-1 is the EtherType
+    l2->ethertype = proto_type;
+    l2->has_vlan = 0;
+    l2->vlan_id = 0;
+    
+    *ip_offset = 20;  // IP header starts after SLL2 header
+    return 0;
+}
+
+// Parse LINUX_SLL format (older version)
+int parse_linux_sll(const uint8_t *packet, uint32_t packet_len, layer2_info_t *l2, uint32_t *ip_offset) {
+    if (packet_len < 16) return -1;
+    
+    // LINUX_SLL header: 16 bytes
+    // Protocol type is at offset 14-15
+    uint16_t proto_type = (packet[14] << 8) | packet[15];
+    
+    memset(l2->src_mac, 0, 6);
+    memset(l2->dst_mac, 0, 6);
+    
+    // Extract link-layer address if available
+    uint8_t addr_len = packet[4];
+    if (addr_len >= 6 && packet_len >= 6 + 8) {
+        memcpy(l2->src_mac, packet + 6, 6);
+    }
+    
+    l2->ethertype = proto_type;
+    l2->has_vlan = 0;
+    l2->vlan_id = 0;
+    
+    *ip_offset = 16;  // IP header starts after SLL header
+    return 0;
+}
+
 int parse_layer2(const uint8_t *packet, uint32_t packet_len, layer2_info_t *l2) {
     if (packet_len < 14) {
-        return -1;  // Too short for Ethernet header
+        return -1;  // Too short for any header
     }
     
     struct ethhdr *eth = (struct ethhdr *)packet;
@@ -124,6 +185,55 @@ int parse_layer2(const uint8_t *packet, uint32_t packet_len, layer2_info_t *l2) 
 
 /* ========== Layer 3 Parsing ========== */
 
+int parse_layer3_with_offset(const uint8_t *packet, uint32_t packet_len, uint32_t offset, layer3_info_t *l3) {
+    // Check if we have enough data for IP header
+    if (packet_len < offset + 20) {
+        return -1;  // Too short for IP header
+    }
+    
+    // Check IP version from first byte
+    uint8_t version = (packet[offset] >> 4) & 0x0F;
+    
+    if (version == 4) {
+        // IPv4 packet
+        struct iphdr *ip = (struct iphdr *)(packet + offset);
+        
+        // Extract IP header fields
+        l3->src_ip = ntohl(ip->saddr);
+        l3->dst_ip = ntohl(ip->daddr);
+        l3->protocol = ip->protocol;
+        l3->ttl = ip->ttl;
+        l3->packet_size = ntohs(ip->tot_len);
+        l3->header_length = ip->ihl * 4;
+        l3->identification = ntohs(ip->id);
+        l3->checksum = ntohs(ip->check);
+        l3->version = ip->version;
+        
+        // Extract flags and fragment offset
+        uint16_t frag = ntohs(ip->frag_off);
+        l3->flags = (frag >> 13) & 0x07;
+        l3->fragment_offset = frag & 0x1FFF;
+        
+        return 0;
+    } else if (version == 6) {
+        // IPv6 packet - currently not fully supported, mark and skip
+        // TODO: Add full IPv6 support
+        l3->version = 6;
+        l3->protocol = packet[offset + 6];  // Next Header field
+        l3->ttl = packet[offset + 7];       // Hop Limit
+        l3->header_length = 40;             // IPv6 header is fixed 40 bytes
+        
+        // For now, set IPs to 0 (would need 128-bit address support)
+        l3->src_ip = 0;
+        l3->dst_ip = 0;
+        l3->packet_size = ntohs(*(uint16_t *)(packet + offset + 4)) + 40;
+        
+        return -1;  // Return -1 to skip IPv6 for now
+    }
+    
+    return -1;  // Unknown IP version
+}
+
 int parse_layer3(const uint8_t *packet, uint32_t packet_len, layer3_info_t *l3) {
     // Skip Ethernet header (14 bytes or 18 if VLAN)
     uint32_t offset = 14;
@@ -140,48 +250,18 @@ int parse_layer3(const uint8_t *packet, uint32_t packet_len, layer3_info_t *l3) 
         return -1;  // Not IPv4
     }
     
-    if (packet_len < offset + 20) {
-        return -1;  // Too short for IP header
-    }
-    
-    struct iphdr *ip = (struct iphdr *)(packet + offset);
-    
-    // Extract IP header fields
-    l3->version = ip->version;
-    l3->header_length = ip->ihl * 4;
-    l3->protocol = ip->protocol;
-    l3->ttl = ip->ttl;
-    l3->packet_size = ntohs(ip->tot_len);
-    l3->identification = ntohs(ip->id);
-    l3->checksum = ntohs(ip->check);
-    
-    // Extract flags and fragment offset
-    uint16_t frag_off = ntohs(ip->frag_off);
-    l3->flags = (frag_off >> 13) & 0x07;
-    l3->fragment_offset = frag_off & 0x1FFF;
-    
-    // Extract IP addresses
-    l3->src_ip = ntohl(ip->saddr);
-    l3->dst_ip = ntohl(ip->daddr);
-    
-    return 0;
+    return parse_layer3_with_offset(packet, packet_len, offset, l3);
 }
 
 /* ========== Layer 4 Parsing ========== */
 
-int parse_layer4(const uint8_t *packet, uint32_t packet_len, 
-                 const layer3_info_t *l3, layer4_info_t *l4) {
-    
+int parse_layer4_with_offset(const uint8_t *packet, uint32_t packet_len, uint32_t l2_offset, 
+                              const layer3_info_t *l3, layer4_info_t *l4) {
     memset(l4, 0, sizeof(layer4_info_t));
     l4->protocol = l3->protocol;
     
-    // Calculate IP header end
-    uint32_t offset = 14;  // Ethernet
-    if (packet_len > 16) {
-        uint16_t ethertype = ntohs(*(uint16_t *)(packet + 12));
-        if (ethertype == 0x8100) offset = 18;  // VLAN
-    }
-    offset += l3->header_length;  // Skip IP header
+    // Calculate Layer 4 offset
+    uint32_t offset = l2_offset + l3->header_length;
     
     if (l3->protocol == IPPROTO_TCP) {
         // Parse TCP
@@ -228,6 +308,16 @@ int parse_layer4(const uint8_t *packet, uint32_t packet_len,
     }
     
     return 0;
+}
+
+int parse_layer4(const uint8_t *packet, uint32_t packet_len, 
+                 const layer3_info_t *l3, layer4_info_t *l4) {
+    uint32_t l2_offset = 14;  // Standard Ethernet
+    if (packet_len > 16) {
+        uint16_t ethertype = ntohs(*(uint16_t *)(packet + 12));
+        if (ethertype == 0x8100) l2_offset = 18;  // VLAN
+    }
+    return parse_layer4_with_offset(packet, packet_len, l2_offset, l3, l4);
 }
 
 /* ========== Layer 5 Parsing (Flow Tracking) ========== */
@@ -280,22 +370,43 @@ int parse_packet(dpi_engine_t *engine, const uint8_t *packet,
     parsed->raw_data = packet;
     parsed->raw_data_len = packet_len;
     
-    // Parse Layer 2
-    if (parse_layer2(packet, packet_len, &parsed->layer2) == 0) {
-        engine->l2_parsed++;
+    // Parse Layer 2 - handle different capture formats
+    uint32_t ip_offset = 0;
+    
+    if (engine->datalink_type == DLT_LINUX_SLL2) {
+        // Linux cooked capture v2
+        if (parse_linux_sll2(packet, packet_len, &parsed->layer2, &ip_offset) == 0) {
+            engine->l2_parsed++;
+        } else {
+            return -1;
+        }
+    } else if (engine->datalink_type == DLT_LINUX_SLL) {
+        // Linux cooked capture v1
+        if (parse_linux_sll(packet, packet_len, &parsed->layer2, &ip_offset) == 0) {
+            engine->l2_parsed++;
+        } else {
+            return -1;
+        }
     } else {
-        return -1;
+        // Standard Ethernet (DLT_EN10MB)
+        if (parse_layer2(packet, packet_len, &parsed->layer2) == 0) {
+            engine->l2_parsed++;
+            ip_offset = 14;
+            if (parsed->layer2.has_vlan) ip_offset = 18;
+        } else {
+            return -1;
+        }
     }
     
-    // Parse Layer 3
-    if (parse_layer3(packet, packet_len, &parsed->layer3) == 0) {
+    // Parse Layer 3 - pass the correct offset
+    if (parse_layer3_with_offset(packet, packet_len, ip_offset, &parsed->layer3) == 0) {
         engine->l3_parsed++;
     } else {
         return -1;
     }
     
     // Parse Layer 4
-    if (parse_layer4(packet, packet_len, &parsed->layer3, &parsed->layer4) == 0) {
+    if (parse_layer4_with_offset(packet, packet_len, ip_offset, &parsed->layer3, &parsed->layer4) == 0) {
         engine->l4_parsed++;
     }
     
@@ -310,9 +421,6 @@ int parse_packet(dpi_engine_t *engine, const uint8_t *packet,
         update_flow_stats(parsed->flow, parsed);
     }
     
-    // Detect protocol with nDPI (Layer 7 - partial)
-    detect_protocol(engine, parsed);
-    
     // Initialize MQTT fields (parsing happens AFTER attack detection)
     parsed->is_mqtt = 0;
     parsed->mqtt_packet_type = 0;
@@ -321,11 +429,46 @@ int parse_packet(dpi_engine_t *engine, const uint8_t *packet,
     parsed->mqtt_payload_length = 0;
     parsed->mqtt_payload_data[0] = '\0';
     
-    // Mark as potential MQTT but don't parse yet (security first!)
-    if (parsed->layer4.dst_port == 1883 || parsed->layer4.src_port == 1883 ||
-        parsed->layer4.dst_port == 8883 || parsed->layer4.src_port == 8883) {
-        strcpy(parsed->detected_protocol, "MQTT-Port");  // Tentative
+    // Port-based protocol detection (custom parser has priority over nDPI)
+    // This helps when nDPI can't detect encrypted or simple protocols
+    uint16_t src_port = parsed->layer4.src_port;
+    uint16_t dst_port = parsed->layer4.dst_port;
+    
+    if (dst_port == 1883 || src_port == 1883 || dst_port == 8883 || src_port == 8883) {
+        strcpy(parsed->detected_protocol, "MQTT");
+    } else if (dst_port == 53 || src_port == 53) {
+        strcpy(parsed->detected_protocol, "DNS");
+    } else if (dst_port == 5353 || src_port == 5353) {
+        strcpy(parsed->detected_protocol, "mDNS");
+    } else if (dst_port == 80 || src_port == 80) {
+        strcpy(parsed->detected_protocol, "HTTP");
+    } else if (dst_port == 443 || src_port == 443) {
+        strcpy(parsed->detected_protocol, "TLS");
+    } else if (dst_port == 22 || src_port == 22) {
+        strcpy(parsed->detected_protocol, "SSH");
+    } else if (dst_port == 21 || src_port == 21) {
+        strcpy(parsed->detected_protocol, "FTP");
+    } else if (dst_port == 20 || src_port == 20) {
+        strcpy(parsed->detected_protocol, "FTP-Data");
+    } else if (dst_port == 25 || src_port == 25) {
+        strcpy(parsed->detected_protocol, "SMTP");
+    } else if (dst_port == 110 || src_port == 110) {
+        strcpy(parsed->detected_protocol, "POP3");
+    } else if (dst_port == 143 || src_port == 143) {
+        strcpy(parsed->detected_protocol, "IMAP");
+    } else if (dst_port == 3306 || src_port == 3306) {
+        strcpy(parsed->detected_protocol, "MySQL");
+    } else if (dst_port == 5432 || src_port == 5432) {
+        strcpy(parsed->detected_protocol, "PostgreSQL");
+    } else if (dst_port == 6379 || src_port == 6379) {
+        strcpy(parsed->detected_protocol, "Redis");
+    } else if (dst_port == 27017 || src_port == 27017) {
+        strcpy(parsed->detected_protocol, "MongoDB");
     }
+    
+    // Detect protocol with nDPI (Layer 7 - partial)
+    // This will use custom parser result if already set, otherwise fall back to nDPI
+    detect_protocol(engine, parsed);
     
     // Update global statistics
     engine->total_packets++;

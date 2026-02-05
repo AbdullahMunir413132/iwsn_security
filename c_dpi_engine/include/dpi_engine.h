@@ -142,6 +142,12 @@ typedef struct {
     ndpi_protocol detected_protocol;
     char protocol_name[64];
     
+    // Protocol voting - track protocol detections per flow
+    char candidate_protocols[10][64];  // Store up to 10 different detected protocols
+    uint32_t protocol_counts[10];      // Count of packets for each protocol
+    uint32_t num_candidates;           // Number of unique protocols detected
+    uint8_t protocol_confirmed;        // Flag: protocol confirmed with 5+ packets
+    
 } flow_stats_t;
 
 /* ========== Parsed Packet Structure ========== */
@@ -186,6 +192,9 @@ typedef struct {
     uint32_t flow_count;
     uint32_t max_flows;
     
+    // Capture format
+    int datalink_type;  // DLT_EN10MB, DLT_LINUX_SLL, or DLT_LINUX_SLL2
+    
     // Statistics
     uint64_t total_packets;
     uint64_t total_bytes;
@@ -209,6 +218,7 @@ typedef struct {
     uint32_t min_packet_size;
     uint32_t max_packet_size;
     double avg_packet_size;
+    int datalink_type;  // Store datalink type (DLT_EN10MB, DLT_LINUX_SLL, DLT_LINUX_SLL2)
 } pcap_stats_t;
 
 /* ========== Function Prototypes ========== */

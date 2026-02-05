@@ -41,11 +41,16 @@ int process_pcap_file(const char *filename, dpi_engine_t *engine, pcap_stats_t *
     int datalink = pcap_datalink(handle);
     printf("[PCAP] Datalink type: %s\n", pcap_datalink_val_to_name(datalink));
     
-    if (datalink != DLT_EN10MB) {
-        fprintf(stderr, "[Error] Only Ethernet (DLT_EN10MB) is supported\n");
+    // Support both Ethernet and Linux cooked capture formats
+    if (datalink != DLT_EN10MB && datalink != DLT_LINUX_SLL && datalink != DLT_LINUX_SLL2) {
+        fprintf(stderr, "[Error] Unsupported datalink type. Only Ethernet, LINUX_SLL, and LINUX_SLL2 are supported\n");
         pcap_close(handle);
         return -1;
     }
+    
+    // Store datalink type for later use
+    stats->datalink_type = datalink;
+    engine->datalink_type = datalink;  // Pass to engine for packet parsing
     
     printf("[PCAP] Processing packets (silent mode - collecting data)...\n");
     
