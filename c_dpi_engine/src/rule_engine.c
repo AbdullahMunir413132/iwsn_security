@@ -223,6 +223,37 @@ void add_detection(rule_engine_t *engine, const attack_detection_t *detection) {
         return;
     }
     
+    // Check if similar attack already exists (same type, attacker, target)
+    for (uint32_t i = 0; i < engine->detection_count; i++) {
+        attack_detection_t *existing = &engine->detections[i];
+        
+        // Match: same attack type, attacker IP, and target IP
+        if (existing->attack_type == detection->attack_type &&
+            existing->attacker_ip == detection->attacker_ip &&
+            existing->target_ip == detection->target_ip) {
+            
+            // Consolidate: update counts and take higher severity/confidence
+            existing->packet_count += detection->packet_count;
+            existing->byte_count += detection->byte_count;
+            
+            if (detection->severity > existing->severity) {
+                existing->severity = detection->severity;
+            }
+            if (detection->confidence_score > existing->confidence_score) {
+                existing->confidence_score = detection->confidence_score;
+            }
+            
+            // Update rate if it's higher
+            if (detection->packets_per_second > existing->packets_per_second) {
+                existing->packets_per_second = detection->packets_per_second;
+            }
+            
+            // Don't increment counters - just consolidated
+            return;
+        }
+    }
+    
+    // No match found - add as new detection
     memcpy(&engine->detections[engine->detection_count], detection, 
            sizeof(attack_detection_t));
     engine->detection_count++;

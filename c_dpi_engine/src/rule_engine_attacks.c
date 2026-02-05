@@ -93,7 +93,7 @@ void detect_aggregate_syn_flood(rule_engine_t *engine, const dpi_engine_t *dpi_e
         uint32_t attacker_count;
     } target_syn_stats_t;
     
-    target_syn_stats_t targets[256];
+    target_syn_stats_t targets[10000];  // Increased to track more targets
     uint32_t target_count = 0;
     
     // Aggregate SYN packets by destination IP
@@ -116,7 +116,7 @@ void detect_aggregate_syn_flood(rule_engine_t *engine, const dpi_engine_t *dpi_e
         }
         
         if (found < 0) {
-            if (target_count >= 256) continue;  // Max targets reached
+            if (target_count >= 10000) continue;  // Max targets reached
             found = target_count++;
             targets[found].dst_ip = flow->dst_ip;
             targets[found].total_syn_count = 0;
@@ -158,7 +158,72 @@ void detect_aggregate_syn_flood(rule_engine_t *engine, const dpi_engine_t *dpi_e
         }
     }
     
-    // Check each target for SYN flood pattern
+    // Check if this is a network scan (many targets, few SYNs each from same attacker)
+    if (target_count > 100) {
+        // Count common attacker IPs across targets
+        uint32_t common_attackers[10];
+        uint32_t common_attacker_count = 0;
+        
+        // Find most common attackers
+        for (uint32_t i = 0; i < target_count && i < 100; i++) {
+            for (uint32_t j = 0; j < targets[i].attacker_count && j < 5; j++) {
+                uint32_t attacker_ip = targets[i].attacker_ips[j];
+                int already_counted = 0;
+                for (uint32_t k = 0; k < common_attacker_count; k++) {
+                    if (common_attackers[k] == attacker_ip) {
+                        already_counted = 1;
+                        break;
+                    }
+                }
+                if (!already_counted && common_attacker_count < 10) {
+                    common_attackers[common_attacker_count++] = attacker_ip;
+                }
+            }
+        }
+        
+        // If 1-10 common attackers hitting 100+ targets, it's a scan - create ONE detection
+        if (common_attacker_count <= 10 && common_attacker_count > 0) {
+            attack_detection_t detection;
+            memset(&detection, 0, sizeof(attack_detection_t));
+            detection.attack_type = ATTACK_TCP_CONNECT_SCAN;
+            detection.severity = SEVERITY_HIGH;
+            strcpy(detection.attack_name, "TCP Network Scan");
+            
+            // Aggregate totals
+            uint32_t total_syn = 0, total_flows = 0, total_syn_only = 0;
+            uint64_t total_bytes_all = 0;
+            for (uint32_t i = 0; i < target_count; i++) {
+                total_syn += targets[i].total_syn_count;
+                total_flows += targets[i].flow_count;
+                total_syn_only += targets[i].syn_only_flows;
+                total_bytes_all += targets[i].total_bytes;
+            }
+            
+            snprintf(detection.description, sizeof(detection.description),
+                    "Network scan detected: %u unique targets scanned from %u source(s) with %u SYN packets across %u flows (%u incomplete)",
+                    target_count, common_attacker_count, total_syn, total_flows, total_syn_only);
+            
+            detection.attacker_ip = common_attackers[0];
+            detection.target_ip = 0;  // Multiple targets
+            detection.protocol = IPPROTO_TCP;
+            detection.packet_count = total_syn;
+            detection.byte_count = total_bytes_all;
+            detection.confidence_score = fmin(1.0, (double)target_count / 1000.0);  // 1000+ targets = 100%
+            
+            snprintf(detection.details, sizeof(detection.details),
+                    "Scanned %u targets, Primary Scanner: %s",
+                    target_count,
+                    inet_ntoa((struct in_addr){.s_addr = htonl(common_attackers[0])}));
+            
+            add_detection(engine, &detection);
+            
+            printf("  \033[1;31m⚠ DETECTED: TCP Network Scan - %u targets from %s\033[0m\n",
+                   target_count, inet_ntoa((struct in_addr){.s_addr = htonl(common_attackers[0])}));
+            return;  // Don't report individual targets
+        }
+    }
+    
+    // Check each target for SYN flood pattern (only if not a scan)
     for (uint32_t i = 0; i < target_count; i++) {
         double duration = targets[i].last_seen - targets[i].first_seen;
         if (duration < 0.1) duration = 0.1;
@@ -192,8 +257,10 @@ void detect_aggregate_syn_flood(rule_engine_t *engine, const dpi_engine_t *dpi_e
             detection.packets_per_second = syn_rate;
             detection.duration_seconds = duration;
             
-            detection.confidence_score = fmin(1.0, 
-                (syn_rate / 50.0) * (syn_only_ratio * 1.2));
+            // Confidence based on rate and ratio (use max to avoid 0 when one is low)
+            double rate_confidence = fmin(1.0, syn_rate / 100.0);  // 100+ SYN/sec = 100%
+            double ratio_confidence = fmin(1.0, syn_only_ratio / 10.0);  // 10:1 ratio = 100%
+            detection.confidence_score = fmax(rate_confidence, ratio_confidence * 0.8);
             
             // Build attacker list for details
             char attacker_list[512] = "";

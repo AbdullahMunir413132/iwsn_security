@@ -2,34 +2,112 @@
   IWSN SECURITY - INTRUSION DETECTION REPORT
 ═══════════════════════════════════════════════════════════════
 
-Report Generated: Thu Feb  5 20:52:41 2026
+Report Generated: Thu Feb  5 21:57:03 2026
 
 
 [SUMMARY]
-Total Packets Analyzed: 105246099195744
-Total Attacks Detected: 42949672960000
-Unique IP Addresses: 171
+Total Packets Analyzed: 94405647231840
+Total Attacks Detected: 42949672960006
+Unique IP Addresses: 2379
 
 
 [ATTACKS BY TYPE]
 ─────────────────────────────────────────────────────────────
-SYN Flood                 : 54032
-UDP Flood                 : 1
-HTTP Flood                : 1
+SYN Flood                 : 221762
+UDP Flood                 : 7
+RUDY                      : 4
+UDP Scan                  : 2
+ICMP Flood                : 1
 
 [DETAILED DETECTIONS]
 ═══════════════════════════════════════════════════════════════
 
 
 --- Attack #1 ---
-Type: Massive DDoS Flood Attack
-Severity: CRITICAL
-Confidence: 51.26%
-Description: Extremely high flow count detected: 51264 flows from 20+ sources - indicative of large-scale DDoS attack
-Attacker: 195.244.222.210:0
-Target: 24.86.162.136:0
-Packets: 54032, Bytes: 452061
-Details: Total flows: 51264, Total packets: 54032, Primary target: 24.86.162.136, 3 unique targets detected, Sample attackers: 195.244.222.210, 2.123.175.138, 76.17.168.161, 206.253.150.20, 90.205.8.106, 166.137.83.135, 108.193.140.112, 88.150.215.34, 109.230.221.164, 37.59.25.77, +10 more
+Type: HTTP Flood Attack
+Severity: HIGH
+Confidence: 64.40%
+Description: High rate of HTTP requests detected (64.09 requests/sec)
+Attacker: 147.32.84.165:1373
+Target: 31.192.109.167:80
+Packets: 90, Bytes: 9240
+Rate: 64.40 packets/sec
+Duration: 0.23 seconds
+Details: HTTP Packets: 15, Target Port: 80, Rate: 64.09 req/s, Duration: 0.23s
+
+
+--- Attack #2 ---
+Type: RUDY (R-U-Dead-Yet) Slow POST Attack
+Severity: MEDIUM
+Confidence: 70.00%
+Description: Slow HTTP POST detected (1.43 bytes/sec over 4341.08 seconds)
+Attacker: 147.32.84.165:2583
+Target: 173.192.170.88:80
+Packets: 43, Bytes: 6224
+Duration: 4341.08 seconds
+Details: HTTP connection kept alive with minimal data. Packets: 43, Avg Rate: 1.43 bytes/sec, Duration: 4341.08s
+
+
+--- Attack #3 ---
+Type: RUDY (R-U-Dead-Yet) Slow POST Attack
+Severity: MEDIUM
+Confidence: 70.00%
+Description: Slow HTTP POST detected (8.49 bytes/sec over 215.76 seconds)
+Attacker: 147.32.84.165:3723
+Target: 174.133.57.141:80
+Packets: 14, Bytes: 1831
+Duration: 215.76 seconds
+Details: HTTP connection kept alive with minimal data. Packets: 14, Avg Rate: 8.49 bytes/sec, Duration: 215.76s
+
+
+--- Attack #4 ---
+Type: HTTP Flood Attack
+Severity: HIGH
+Confidence: 100.00%
+Description: High rate of HTTP requests detected (112.35 requests/sec)
+Attacker: 147.32.84.165:2256
+Target: 217.163.21.37:80
+Packets: 21, Bytes: 6649
+Rate: 112.35 packets/sec
+Duration: 0.19 seconds
+Details: HTTP Packets: 21, Target Port: 80, Rate: 112.35 req/s, Duration: 0.19s
+
+
+--- Attack #5 ---
+Type: HTTP Flood Attack
+Severity: HIGH
+Confidence: 54.80%
+Description: High rate of HTTP requests detected (54.80 requests/sec)
+Attacker: 147.32.84.165:4860
+Target: 174.36.246.56:80
+Packets: 27, Bytes: 15181
+Rate: 54.80 packets/sec
+Duration: 0.49 seconds
+Details: HTTP Packets: 27, Target Port: 80, Rate: 54.80 req/s, Duration: 0.49s
+
+
+--- Attack #6 ---
+Type: HTTP Flood Attack
+Severity: HIGH
+Confidence: 98.70%
+Description: High rate of HTTP requests detected (98.70 requests/sec)
+Attacker: 147.32.84.165:4900
+Target: 77.238.175.247:80
+Packets: 14, Bytes: 2274
+Rate: 98.70 packets/sec
+Duration: 0.14 seconds
+Details: HTTP Packets: 14, Target Port: 80, Rate: 98.70 req/s, Duration: 0.14s
+
+
+--- Attack #7 ---
+Type: TCP Network Scan
+Severity: HIGH
+Confidence: 100.00%
+Description: Network scan detected: 2075 unique targets scanned from 6 source(s) with 67311 SYN packets across 11682 flows (9656 incomplete)
+Attacker: 147.32.84.165:0
+Target: 0.0.0.0:0
+Packets: 67311, Bytes: 43756454
+Details: Scanned 2075 targets, Primary Scanner: 147.32.84.165
 
 
 ═══════════════════════════════════════════════════════════════
