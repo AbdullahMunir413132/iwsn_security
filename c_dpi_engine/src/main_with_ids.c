@@ -62,6 +62,13 @@ int process_pcap_with_ids(const char *filename, dpi_engine_t *dpi_engine,
         
         packet_count++;
         
+        // Safety limit: Stop if we've processed too many packets (likely massive flood)
+        if (packet_count > 500000) {
+            fprintf(stderr, "\n[Warning] Packet limit reached (500k) - stopping analysis\n");
+            fprintf(stderr, "[Info] This is likely a massive DDoS attack - early stopping to save resources\n");
+            break;
+        }
+        
         // Track timing
         if (packet_count == 1) {
             stats->start_time = header->ts;
@@ -169,7 +176,7 @@ int main(int argc, char *argv[]) {
     
     // Initialize DPI engine
     printf("\n[Step 1/4] Initializing DPI Engine...\n");
-    dpi_engine_t *dpi_engine = dpi_engine_init(10000);
+    dpi_engine_t *dpi_engine = dpi_engine_init(100000);  // Max 100k flows for DDoS scenarios
     if (!dpi_engine) {
         fprintf(stderr, "Failed to initialize DPI engine\n");
         return 1;

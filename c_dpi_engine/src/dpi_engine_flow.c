@@ -32,8 +32,17 @@ flow_stats_t* get_or_create_flow(dpi_engine_t *engine,
     
     // Flow not found - create new one
     if (engine->flow_count >= engine->max_flows) {
-        fprintf(stderr, "[Warning] Maximum flows reached (%u)\n", engine->max_flows);
+        static int warning_count = 0;
+        if (warning_count++ < 5) {
+            fprintf(stderr, "[Warning] Maximum flows reached (%u) - possible DDoS attack!\n", engine->max_flows);
+        }
         return NULL;
+    }
+    
+    // Early DDoS warning when flow count is abnormally high
+    if (engine->flow_count > 0 && engine->flow_count % 10000 == 0) {
+        fprintf(stderr, "[Alert] High flow count detected: %u flows - analyzing for DDoS patterns...\n", 
+                engine->flow_count);
     }
     
     flow_stats_t *new_flow = &engine->flows[engine->flow_count];

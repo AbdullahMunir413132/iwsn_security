@@ -77,6 +77,151 @@ int detect_syn_flood(rule_engine_t *engine, const flow_stats_t *flow,
     return 0;
 }
 
+/* ========== Aggregate SYN Flood Detection ========== */
+// Detects distributed SYN flood: many flows with few SYN packets each to same target
+void detect_aggregate_syn_flood(rule_engine_t *engine, const dpi_engine_t *dpi_engine) {
+    // Track SYN counts per destination IP
+    typedef struct {
+        uint32_t dst_ip;
+        uint32_t total_syn_count;
+        uint32_t flow_count;
+        uint32_t syn_only_flows;  // Flows with SYN but no ACK
+        uint64_t total_bytes;     // Total bytes in all flows
+        double first_seen;
+        double last_seen;
+        uint32_t attacker_ips[20];  // Sample of attacker IPs
+        uint32_t attacker_count;
+    } target_syn_stats_t;
+    
+    target_syn_stats_t targets[256];
+    uint32_t target_count = 0;
+    
+    // Aggregate SYN packets by destination IP
+    for (uint32_t i = 0; i < dpi_engine->flow_count; i++) {
+        const flow_stats_t *flow = &dpi_engine->flows[i];
+        
+        // Skip non-TCP flows
+        if (flow->protocol != IPPROTO_TCP) continue;
+        
+        // Skip flows with no SYN packets
+        if (flow->syn_count == 0) continue;
+        
+        // Find or create target entry
+        int found = -1;
+        for (uint32_t j = 0; j < target_count; j++) {
+            if (targets[j].dst_ip == flow->dst_ip) {
+                found = j;
+                break;
+            }
+        }
+        
+        if (found < 0) {
+            if (target_count >= 256) continue;  // Max targets reached
+            found = target_count++;
+            targets[found].dst_ip = flow->dst_ip;
+            targets[found].total_syn_count = 0;
+            targets[found].flow_count = 0;
+            targets[found].syn_only_flows = 0;
+            targets[found].total_bytes = 0;
+            targets[found].attacker_count = 0;
+            targets[found].first_seen = flow->first_seen.tv_sec + flow->first_seen.tv_usec / 1000000.0;
+            targets[found].last_seen = flow->last_seen.tv_sec + flow->last_seen.tv_usec / 1000000.0;
+        }
+        
+        targets[found].total_syn_count += flow->syn_count;
+        targets[found].flow_count++;
+        targets[found].total_bytes += flow->total_bytes;
+        
+        // Track unique attacker IPs (sample first 20)
+        if (targets[found].attacker_count < 20) {
+            int already_tracked = 0;
+            for (uint32_t k = 0; k < targets[found].attacker_count; k++) {
+                if (targets[found].attacker_ips[k] == flow->src_ip) {
+                    already_tracked = 1;
+                    break;
+                }
+            }
+            if (!already_tracked) {
+                targets[found].attacker_ips[targets[found].attacker_count++] = flow->src_ip;
+            }
+        }
+        
+        // Update time window
+        double flow_first = flow->first_seen.tv_sec + flow->first_seen.tv_usec / 1000000.0;
+        double flow_last = flow->last_seen.tv_sec + flow->last_seen.tv_usec / 1000000.0;
+        if (flow_first < targets[found].first_seen) targets[found].first_seen = flow_first;
+        if (flow_last > targets[found].last_seen) targets[found].last_seen = flow_last;
+        
+        // Count SYN-only flows (no ACK received = incomplete handshake)
+        if (flow->ack_count == 0 && flow->syn_count > 0) {
+            targets[found].syn_only_flows++;
+        }
+    }
+    
+    // Check each target for SYN flood pattern
+    for (uint32_t i = 0; i < target_count; i++) {
+        double duration = targets[i].last_seen - targets[i].first_seen;
+        if (duration < 0.1) duration = 0.1;
+        
+        double syn_rate = (double)targets[i].total_syn_count / duration;
+        double syn_only_ratio = (double)targets[i].syn_only_flows / (double)targets[i].flow_count;
+        
+        // Detection: High SYN rate OR many SYN-only flows (typical of SYN flood)
+        // Lowered threshold since attack is distributed across flows
+        if ((syn_rate > 20.0 && targets[i].flow_count > 10) ||  // 20+ SYN/sec across 10+ flows
+            (targets[i].syn_only_flows > 15 && syn_only_ratio > 0.7)) {  // 15+ incomplete handshakes
+            
+            attack_detection_t detection;
+            memset(&detection, 0, sizeof(attack_detection_t));
+            detection.attack_type = ATTACK_SYN_FLOOD;
+            detection.severity = SEVERITY_HIGH;
+            strcpy(detection.attack_name, "Distributed SYN Flood Attack");
+            
+            snprintf(detection.description, sizeof(detection.description),
+                    "Distributed SYN flood detected: %u SYN packets across %u flows from %u sources (%.2f SYN/sec, %u incomplete handshakes)",
+                    targets[i].total_syn_count, targets[i].flow_count, targets[i].attacker_count, syn_rate, targets[i].syn_only_flows);
+            
+            detection.target_ip = targets[i].dst_ip;
+            detection.attacker_ip = targets[i].attacker_count > 0 ? targets[i].attacker_ips[0] : 0;  // Primary attacker
+            detection.src_port = 0;
+            detection.dst_port = 0;
+            detection.protocol = IPPROTO_TCP;
+            
+            detection.packet_count = targets[i].total_syn_count;
+            detection.byte_count = targets[i].total_bytes;
+            detection.packets_per_second = syn_rate;
+            detection.duration_seconds = duration;
+            
+            detection.confidence_score = fmin(1.0, 
+                (syn_rate / 50.0) * (syn_only_ratio * 1.2));
+            
+            // Build attacker list for details
+            char attacker_list[512] = "";
+            int chars_written = 0;
+            for (uint32_t j = 0; j < targets[i].attacker_count && j < 10; j++) {
+                chars_written += snprintf(attacker_list + chars_written, sizeof(attacker_list) - chars_written,
+                                         "%s%s", j > 0 ? ", " : "",
+                                         inet_ntoa((struct in_addr){.s_addr = htonl(targets[i].attacker_ips[j])}));
+            }
+            if (targets[i].attacker_count > 10) {
+                snprintf(attacker_list + chars_written, sizeof(attacker_list) - chars_written,
+                        ", +%u more", targets[i].attacker_count - 10);
+            }
+            
+            snprintf(detection.details, sizeof(detection.details),
+                    "Target: %s, Total Flows: %u, SYN-only Flows: %u, Duration: %.2fs, Attackers: %s",
+                    inet_ntoa((struct in_addr){.s_addr = htonl(targets[i].dst_ip)}),
+                    targets[i].flow_count, targets[i].syn_only_flows, duration, attacker_list);
+            
+            add_detection(engine, &detection);
+            
+            printf("  \033[1;31m⚠ DETECTED: Distributed SYN Flood to %s (%u flows, %.2f SYN/sec)\033[0m\n",
+                   inet_ntoa((struct in_addr){.s_addr = htonl(targets[i].dst_ip)}),
+                   targets[i].flow_count, syn_rate);
+        }
+    }
+}
+
 /* ========== UDP Flood Detection ========== */
 
 int detect_udp_flood(rule_engine_t *engine, const flow_stats_t *flow, 

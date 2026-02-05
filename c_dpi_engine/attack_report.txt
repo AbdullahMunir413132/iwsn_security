@@ -1,0 +1,37 @@
+═══════════════════════════════════════════════════════════════
+  IWSN SECURITY - INTRUSION DETECTION REPORT
+═══════════════════════════════════════════════════════════════
+
+Report Generated: Thu Feb  5 20:52:41 2026
+
+
+[SUMMARY]
+Total Packets Analyzed: 105246099195744
+Total Attacks Detected: 42949672960000
+Unique IP Addresses: 171
+
+
+[ATTACKS BY TYPE]
+─────────────────────────────────────────────────────────────
+SYN Flood                 : 54032
+UDP Flood                 : 1
+HTTP Flood                : 1
+
+[DETAILED DETECTIONS]
+═══════════════════════════════════════════════════════════════
+
+
+--- Attack #1 ---
+Type: Massive DDoS Flood Attack
+Severity: CRITICAL
+Confidence: 51.26%
+Description: Extremely high flow count detected: 51264 flows from 20+ sources - indicative of large-scale DDoS attack
+Attacker: 195.244.222.210:0
+Target: 24.86.162.136:0
+Packets: 54032, Bytes: 452061
+Details: Total flows: 51264, Total packets: 54032, Primary target: 24.86.162.136, 3 unique targets detected, Sample attackers: 195.244.222.210, 2.123.175.138, 76.17.168.161, 206.253.150.20, 90.205.8.106, 166.137.83.135, 108.193.140.112, 88.150.215.34, 109.230.221.164, 37.59.25.77, +10 more
+
+
+═══════════════════════════════════════════════════════════════
+End of Report
+═══════════════════════════════════════════════════════════════

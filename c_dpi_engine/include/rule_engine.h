@@ -151,6 +151,12 @@ typedef struct {
     uint32_t detection_count;
     uint32_t max_detections;
     
+    // IP Blocklist (for detected attackers)
+    uint32_t *blocked_ips;
+    uint32_t blocked_ip_count;
+    uint32_t max_blocked_ips;
+    uint64_t blocked_packet_count;
+    
     // Global statistics
     uint64_t total_packets_analyzed;
     uint64_t total_attacks_detected;
@@ -180,6 +186,7 @@ void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dp
 
 // Individual attack detection functions
 int detect_syn_flood(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection);
+void detect_aggregate_syn_flood(rule_engine_t *engine, const dpi_engine_t *dpi_engine);
 int detect_udp_flood(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection);
 int detect_http_flood(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection);
 int detect_ping_of_death(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection);
@@ -193,6 +200,11 @@ int detect_icmp_flood(rule_engine_t *engine, const flow_stats_t *flow, attack_de
 // IP statistics management
 ip_statistics_t* get_or_create_ip_stats(rule_engine_t *engine, uint32_t ip_address);
 void update_ip_statistics(rule_engine_t *engine, const parsed_packet_t *packet);
+
+// IP Blocking functions
+void block_ip(rule_engine_t *engine, uint32_t ip_address);
+int is_ip_blocked(rule_engine_t *engine, uint32_t ip_address);
+void check_and_block_flood_sources(rule_engine_t *engine);
 
 // Reporting functions
 void print_attack_detection(const attack_detection_t *detection);
