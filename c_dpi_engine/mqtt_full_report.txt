@@ -1,0 +1,2430 @@
+╔════════════════════════════════════════════════════════════════╗
+║                                                                ║
+║         IWSN SECURITY - DPI ENGINE + IDS v3.0                  ║
+║   Deep Packet Inspection + Intrusion Detection System         ║
+║                    Powered by nDPI                             ║
+║                                                                ║
+╚════════════════════════════════════════════════════════════════╝
+
+[Step 1/4] Initializing DPI Engine...
+[DPI Engine] Initialized with max_flows=10000
+[DPI Engine] nDPI version: 5.1.0-5618-0a97483
+[DPI Engine] MQTT parser enabled
+
+[Step 2/4] Initializing Intrusion Detection System...
+[Rule Engine] Default thresholds loaded
+[Rule Engine] Initialized successfully
+[Rule Engine] Max IPs: 10000, Max Detections: 1000
+
+[Step 3/4] Processing PCAP file and detecting attacks...
+
+[PCAP] Opening file: ../scripts/pcap_samples/mqtt_sensor.pcap
+[PCAP] Datalink type: EN10MB
+[PCAP] Processing packets and analyzing for attacks...
+
+[PCAP] File processing complete
+[PCAP] Total packets: 51
+[PCAP] Total flows: 1
+
+[Step 4/4] Performing deep flow analysis...
+
+[Rule Engine] Analyzing 1 flows for attacks...
+[Rule Engine] Analysis complete. Detected 0 attacks.
+
+
+╔════════════════════════════════════════════════════════════════╗
+║                                                                ║
+║              PCAP FILE DETAILED ANALYSIS SUMMARY               ║
+║                                                                ║
+╚════════════════════════════════════════════════════════════════╝
+
+[FILE INFORMATION]
+═══════════════════════════════════════════════════════════════
+  Filename:        ../scripts/pcap_samples/mqtt_sensor.pcap
+  File Size:       5259 bytes (5.14 KB, 0.01 MB)
+
+[CAPTURE TIMING]
+═══════════════════════════════════════════════════════════════
+  Start Time:      2026-02-01 00:57:52.178246
+  End Time:        2026-02-01 00:57:52.258648
+  Duration:        0.080402 seconds
+  Packet Rate:     634.31 packets/second
+  Data Rate:       54961.32 bytes/second (53.67 KB/s)
+
+[PACKET STATISTICS]
+═══════════════════════════════════════════════════════════════
+  Total Packets:   51
+  Total Bytes:     4419 bytes (4.32 KB, 0.00 MB)
+  Min Packet Size: 79 bytes
+  Max Packet Size: 87 bytes
+  Avg Packet Size: 86.65 bytes
+
+[FLOW STATISTICS]
+═══════════════════════════════════════════════════════════════
+  Total Flows:     1
+  Avg Packets/Flow:51.00
+  Avg Bytes/Flow:  4419.00
+
+═══════════════════════════════════════════════════════════════
+
+
+
+
+╔════════════════════════════════════════════════════════════════╗
+║                                                                ║
+║              INTRUSION DETECTION SUMMARY REPORT                ║
+║                                                                ║
+╚════════════════════════════════════════════════════════════════╝
+
+[ANALYSIS OVERVIEW]
+═══════════════════════════════════════════════════════════════
+  Total Packets Analyzed:    51
+  Total Attacks Detected:    0
+  Unique IP Addresses:       1
+
+  ✓ No attacks detected. Traffic appears normal.
+
+═══════════════════════════════════════════════════════════════
+
+╔════════════════════════════════════════════════════════════════╗
+║                                                                ║
+║                   MQTT PROTOCOL STATISTICS                     ║
+║                                                                ║
+╚════════════════════════════════════════════════════════════════╝
+
+[MQTT PACKET BREAKDOWN]
+═══════════════════════════════════════════════════════════════
+  Total MQTT Packets:    50
+  CONNECT:               0
+  CONNACK:               0
+  PUBLISH:               50
+  SUBSCRIBE:             0
+  UNSUBSCRIBE:           0
+  PINGREQ:               0
+  PINGRESP:              0
+  DISCONNECT:            0
+
+[MQTT SECURITY ANOMALIES]
+═══════════════════════════════════════════════════════════════
+  Invalid Packets:       0
+  Malformed Packets:     1
+  Oversized Packets:     0
+  Suspicious Topics:     0
+
+
+
+╔════════════════════════════════════════════════════════════════╗
+║                                                                ║
+║               SAMPLE FLOW ANALYSIS (First 5 Flows)            ║
+║                                                                ║
+╚════════════════════════════════════════════════════════════════╝
+
+████████████████████████████████████████████████████████████████
+█                    FLOW #1 ANALYSIS                        █
+████████████████████████████████████████████████████████████████
+
+[FLOW SUMMARY]
+========================================
+5-Tuple: 192.168.1.10:45678 <-> 192.168.1.20:1883
+Transport Protocol: 6 (TCP)
+
+[TIME INFORMATION]
+  First Seen: 2026-02-01 00:57:52.178246
+  Last Seen:  2026-02-01 00:57:52.258648
+  Duration:   0.080402 seconds
+
+[TRAFFIC STATISTICS]
+  Total Packets: 51
+  Packets (Src->Dst): 51
+  Packets (Dst->Src): 0
+  Total Bytes: 4419
+  Bytes (Src->Dst): 4419
+  Bytes (Dst->Src): 0
+
+[PACKET SIZE STATISTICS]
+  Min Packet Size: 79 bytes
+  Max Packet Size: 87 bytes
+  Avg Packet Size: 86 bytes
+
+[TCP STATISTICS]
+  SYN Count: 0
+  ACK Count: 51
+  FIN Count: 0
+  RST Count: 0
+  Connection Attempts: 0
+  Connection State: ACTIVE
+
+[TIMING ANALYSIS]
+  Avg Inter-arrival Time: 1608 μs
+
+[LAYER 7 PROTOCOL DETECTION]
+  Detected Protocol: MQTT.PUBLISH
+
+════════════════════════════════════════════════════════════════
+         DETAILED PACKET ANALYSIS FOR FLOW #1
+         Total Packets in Flow: 51
+════════════════════════════════════════════════════════════════
+
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #1 (Flow Packet #1)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.178246
+  Packet Size: 79 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  65 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT-Port
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #2 (Flow Packet #2)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.180022
+  Packet Size: 86 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  72 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/0
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":20,"hum":50}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #3 (Flow Packet #3)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.181524
+  Packet Size: 86 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  72 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/1
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":21,"hum":51}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #4 (Flow Packet #4)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.182967
+  Packet Size: 86 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  72 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/2
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":22,"hum":52}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #5 (Flow Packet #5)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.184420
+  Packet Size: 86 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  72 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/3
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":23,"hum":53}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #6 (Flow Packet #6)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.185844
+  Packet Size: 86 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  72 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/4
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":24,"hum":54}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #7 (Flow Packet #7)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.187261
+  Packet Size: 86 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  72 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/5
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":25,"hum":55}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #8 (Flow Packet #8)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.188722
+  Packet Size: 86 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  72 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/6
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":26,"hum":56}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #9 (Flow Packet #9)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.190148
+  Packet Size: 86 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  72 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/7
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":27,"hum":57}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #10 (Flow Packet #10)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.191633
+  Packet Size: 86 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  72 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/8
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":28,"hum":58}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #11 (Flow Packet #11)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.193050
+  Packet Size: 86 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  72 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/9
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":29,"hum":59}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #12 (Flow Packet #12)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.194577
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/10
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":20,"hum":60}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #13 (Flow Packet #13)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.196647
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/11
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":21,"hum":61}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #14 (Flow Packet #14)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.198025
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/12
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":22,"hum":62}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #15 (Flow Packet #15)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.199449
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/13
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":23,"hum":63}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #16 (Flow Packet #16)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.200874
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/14
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":24,"hum":64}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #17 (Flow Packet #17)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.202278
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/15
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":25,"hum":65}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #18 (Flow Packet #18)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.203735
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/16
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":26,"hum":66}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #19 (Flow Packet #19)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.205216
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/17
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":27,"hum":67}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #20 (Flow Packet #20)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.206702
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/18
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":28,"hum":68}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #21 (Flow Packet #21)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.208092
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/19
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":29,"hum":69}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #22 (Flow Packet #22)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.209558
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/20
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":20,"hum":50}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #23 (Flow Packet #23)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.211034
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/21
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":21,"hum":51}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #24 (Flow Packet #24)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.212442
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/22
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":22,"hum":52}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #25 (Flow Packet #25)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.213959
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/23
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":23,"hum":53}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #26 (Flow Packet #26)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.216682
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/24
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":24,"hum":54}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #27 (Flow Packet #27)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.220000
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/25
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":25,"hum":55}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #28 (Flow Packet #28)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.223013
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/26
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":26,"hum":56}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #29 (Flow Packet #29)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.224705
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/27
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":27,"hum":57}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #30 (Flow Packet #30)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.226154
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/28
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":28,"hum":58}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #31 (Flow Packet #31)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.228081
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/29
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":29,"hum":59}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #32 (Flow Packet #32)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.229973
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/30
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":20,"hum":60}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #33 (Flow Packet #33)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.231676
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/31
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":21,"hum":61}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #34 (Flow Packet #34)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.233419
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/32
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":22,"hum":62}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #35 (Flow Packet #35)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.235011
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/33
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":23,"hum":63}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #36 (Flow Packet #36)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.236590
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/34
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":24,"hum":64}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #37 (Flow Packet #37)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.238039
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/35
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":25,"hum":65}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #38 (Flow Packet #38)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.239553
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/36
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":26,"hum":66}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #39 (Flow Packet #39)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.240990
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/37
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":27,"hum":67}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #40 (Flow Packet #40)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.242366
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/38
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":28,"hum":68}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #41 (Flow Packet #41)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.243779
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/39
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":29,"hum":69}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #42 (Flow Packet #42)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.245630
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/40
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":20,"hum":50}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #43 (Flow Packet #43)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.247148
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/41
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":21,"hum":51}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #44 (Flow Packet #44)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.248579
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/42
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":22,"hum":52}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #45 (Flow Packet #45)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.250037
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/43
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":23,"hum":53}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #46 (Flow Packet #46)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.251481
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/44
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":24,"hum":54}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #47 (Flow Packet #47)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.252928
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/45
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":25,"hum":55}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #48 (Flow Packet #48)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.254369
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/46
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":26,"hum":56}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #49 (Flow Packet #49)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.255789
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/47
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":27,"hum":57}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #50 (Flow Packet #50)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.257228
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/48
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":28,"hum":58}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+┌─────────────────────────────────────────────────────────────┐
+│  PACKET #51 (Flow Packet #51)                                
+└─────────────────────────────────────────────────────────────┘
+
+[PACKET METADATA]
+  Timestamp:   2026-02-01 00:57:52.258648
+  Packet Size: 87 bytes
+
+[LAYER 2 - DATA LINK]
+  Source MAC:      74:e5:f9:bf:93:5c
+  Destination MAC: ff:ff:ff:ff:ff:ff
+  EtherType:       0x0800
+
+[LAYER 3 - NETWORK]
+  Source IP:       192.168.1.10
+  Destination IP:  192.168.1.20
+  Protocol:        6 (TCP)
+  TTL:             64
+  IP Packet Size:  73 bytes
+  Identification:  1
+
+[LAYER 4 - TRANSPORT]
+  Source Port:     45678
+  Destination Port:1883
+  Sequence Number: 0
+  ACK Number:      0
+  Window Size:     8192
+  TCP Flags:       PSH ACK 
+
+[LAYER 5 - SESSION]
+  Flow State:      ESTABLISHED
+  Direction:       Forward (Src->Dst)
+
+[LAYER 7 - APPLICATION]
+  Protocol:        MQTT
+
+[MQTT PROTOCOL DETAILS]
+  MQTT Packet Type: PUBLISH
+  Topic:            sensor/49
+  Payload Length:   20 bytes
+  Payload Data:     {"temp":29,"hum":59}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+
+
+╔════════════════════════════════════════════════════════════════╗
+║                                                                ║
+║                  PROTOCOL DISTRIBUTION SUMMARY                 ║
+║                                                                ║
+╚════════════════════════════════════════════════════════════════╝
+
+  MQTT:       1 flows
+
+═══════════════════════════════════════════════════════════════
+[Rule Engine] Destroyed
+[DPI Engine] Destroyed
+
+
+╔════════════════════════════════════════════════════════════════╗
+║                                                                ║
+║  ✓ Analysis Complete - DPI Engine + IDS Terminated            ║
+║                                                                ║
+║  ✓ No Attacks Detected - Traffic Appears Normal               ║
+║                                                                ║
+╚════════════════════════════════════════════════════════════════╝
+

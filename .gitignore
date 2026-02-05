@@ -1,0 +1,61 @@
+# Build artifacts
+*.o
+*.obj
+*.exe
+*.out
+*.so
+*.dylib
+*.dll
+*.a
+*.lib
+
+# Binary directories
+c_dpi_engine/bin/
+c_dpi_engine/obj/
+
+# Core dumps and debug files
+core
+*.core
+*.dSYM/
+vgcore.*
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-*
+
+# Generated reports
+reports/*.txt
+!reports/README.md
+
+# PCAP files (large binary files)
+*.pcap
+*.pcapng
+!scripts/attack_samples/*.pcap
+!scripts/pcap_samples/*.pcap
+
+# Log files
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# OS specific
+Thumbs.db
+Desktop.ini
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Dependencies and packages
+node_modules/
+*.tar.gz
+*.zip
