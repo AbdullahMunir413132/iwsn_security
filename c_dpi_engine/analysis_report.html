@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IWSN Security Analysis Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 30px 20px;
+            color: #333;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .header h1 { 
+            color: #667eea; 
+            font-size: 2.8em; 
+            margin-bottom: 15px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        .header .subtitle { 
+            color: #666; 
+            font-size: 1.1em; 
+            margin: 8px 0;
+            font-weight: 500;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        @media (max-width: 1024px) {
+            .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 600px) {
+            .metrics-grid { grid-template-columns: 1fr; }
+        }
+        .metric-card {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255,255,255,0.2);
+            position: relative;
+            overflow: hidden;
+        }
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 4px;
+            height: 100%;
+            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
+        }
+        .metric-card:hover { 
+            transform: translateY(-8px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.2);
+        }
+        .metric-card .label {
+            color: #666;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+        .metric-card .value {
+            font-size: 2.8em;
+            font-weight: 700;
+            color: #667eea;
+            line-height: 1.2;
+        }
+        .metric-card .unit { 
+            font-size: 0.75em; 
+            color: #999; 
+            margin-left: 8px;
+            font-weight: 500;
+        }
+        .metric-card.danger .value { color: #e74c3c; }
+        .metric-card.danger::before { background: linear-gradient(180deg, #e74c3c 0%, #c0392b 100%); }
+        .metric-card.success .value { color: #27ae60; }
+        .metric-card.success::before { background: linear-gradient(180deg, #27ae60 0%, #229954 100%); }
+        .metric-card.warning .value { color: #f39c12; }
+        .metric-card.warning::before { background: linear-gradient(180deg, #f39c12 0%, #e67e22 100%); }
+        .chart-container {
+            background: white;
+            padding: 35px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            margin-bottom: 30px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .chart-container h2 {
+            color: #333;
+            margin-bottom: 25px;
+            border-bottom: 4px solid #667eea;
+            padding-bottom: 15px;
+            font-size: 1.8em;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+        canvas { 
+            max-height: 350px;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+        }
+        .cpu-gauge {
+            position: relative;
+            width: 150px;
+            height: 150px;
+            margin: 20px auto;
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.1));
+        }
+        .cpu-gauge svg {
+            transform: rotate(-90deg);
+        }
+        .cpu-gauge .gauge-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2.2em;
+            font-weight: 700;
+            color: #667eea;
+        }
+        .chart-section {
+            background: white;
+            padding: 35px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            margin-bottom: 30px;
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: all 0.3s ease;
+        }
+        .chart-section:hover {
+            box-shadow: 0 15px 40px rgba(0,0,0,0.2);
+        }
+        .chart-section h2 {
+            color: #333;
+            margin-bottom: 25px;
+            border-bottom: 4px solid #667eea;
+            padding-bottom: 15px;
+            font-size: 1.8em;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        .attack-list {
+            background: white;
+            padding: 35px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            margin-bottom: 30px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .attack-list h2 {
+            color: #333;
+            margin-bottom: 25px;
+            border-bottom: 4px solid #e74c3c;
+            padding-bottom: 15px;
+            font-size: 1.8em;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        .attack-item {
+            padding: 18px 20px;
+            border-left: 5px solid #e74c3c;
+            background: #fff5f5;
+            margin-bottom: 12px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+        .attack-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 4px 12px rgba(231,76,60,0.2);
+        }
+        .attack-item.blocked {
+            border-left-color: #27ae60;
+            background: #f0fdf4;
+        }
+        .attack-item.blocked:hover {
+            box-shadow: 0 4px 12px rgba(39,174,96,0.2);
+        }
+        .footer {
+            text-align: center;
+            color: white;
+            margin-top: 40px;
+            padding: 30px;
+            font-size: 1.05em;
+            font-weight: 500;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .footer p { margin: 8px 0; }
+        .notification {
+            background: #27ae60;
+            color: white;
+            padding: 20px 30px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 1.1em;
+            font-weight: 600;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .notification.warning { background: #f39c12; }
+        .notification.danger { background: #e74c3c; }
+        @media print {
+            body { background: white; }
+            .metric-card, .chart-container { break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="notification danger">⚠️ <strong>ALERT:</strong> 30 attack(s) detected! 5 IP(s) blocked.</div>
+        
+        <div class="header">
+            <h1>🛡️ IWSN Security Analysis Report</h1>
+            <div class="subtitle">📅 Generated: 2026-02-12 16:22:41</div>
+            <div class="subtitle">📁 PCAP File: malware_rudy_attack.pcap</div>
+        </div>
+        
+        <div class="metrics-grid">
+            <div class="metric-card danger">
+                <div class="label">🚨 Total Attacks Detected</div>
+                <div class="value">30<span class="unit">attacks</span></div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="label">📦 Packets Processed</div>
+                <div class="value">322,248<span class="unit">pkts</span></div>
+            </div>
+            
+            <div class="metric-card success">
+                <div class="label">⚡ Throughput</div>
+                <div class="value">45,906<span class="unit">pps</span></div>
+            </div>
+            
+            <div class="metric-card warning">
+                <div class="label">🚫 Blocked IPs</div>
+                <div class="value">5<span class="unit">IPs</span></div>
+            </div>
+            
+            <div class="metric-card">
+                <div class="label">⏱️ Processing Time</div>
+                <div class="value">7020<span class="unit">ms</span></div>
+            </div>
+        </div>
+        
+        <div class="chart-section">
+            <h2>📊 Attack Distribution</h2>
+            <canvas id="attackChart"></canvas>
+        </div>
+        
+        <div class="chart-section">
+            <h2>💻 CPU Usage Over Time</h2>
+            <canvas id="cpuChart" height="80"></canvas>
+        </div>
+        
+        <div class="chart-section">
+            <h2>⚡ Throughput Over Time</h2>
+            <canvas id="throughputChart" height="80"></canvas>
+        </div>
+        
+        <div class="attack-list"><h2>🚫 Blocked IP Addresses</h2><div class="attack-item blocked">🔒 147.32.84.165</div><div class="attack-item blocked">🔒 147.32.96.45</div><div class="attack-item blocked">🔒 111.221.102.89</div><div class="attack-item blocked">🔒 94.236.95.170</div><div class="attack-item blocked">🔒 188.205.231.61</div></div>
+        
+        <div class="footer">
+            <p><strong>IWSN Security System</strong> - Deep Packet Inspection & Intrusion Detection</p>
+            <p>For real-time monitoring with Grafana, install Docker: ./install_docker.sh</p>
+        </div>
+    </div>
+    
+    <script>
+        const attackData = {"labels": ["HTTP Flood", "TCP Connect", "RUDY Attack"], "values": [25, 1, 4]};
+        const cpuData = {"labels": ["T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19"], "values": [100.0, 100.0, 100.0, 94.8, 100.0, 93.1, 100.0, 94.7, 100.0, 100.0, 100.0, 93.6, 96.0, 98.1, 86.5, 89.2, 96.9, 97.8, 92.6, 100.0]};
+        const throughputData = {"labels": ["T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19"], "values": [52512, 40559, 45674, 49845, 43938, 43221, 49071, 52034, 49320, 41474, 41159, 39213, 42937, 40446, 48092, 41292, 45939, 44140, 41950, 44537]};
+        
+        // Attack Distribution Chart
+        new Chart(document.getElementById('attackChart'), {
+            type: 'doughnut',
+            data: {
+                labels: attackData.labels,
+                datasets: [{
+                    data: attackData.values,
+                    backgroundColor: [
+                        '#e74c3c', '#3498db', '#f39c12', '#9b59b6',
+                        '#1abc9c', '#e67e22', '#34495e', '#16a085'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: { position: 'right' }
+                }
+            }
+        });
+        
+        // CPU Usage Line Chart
+        new Chart(document.getElementById('cpuChart'), {
+            type: 'line',
+            data: {
+                labels: cpuData.labels,
+                datasets: [{
+                    label: 'CPU Usage (%)',
+                    data: cpuData.values,
+                    borderColor: '#e74c3c',
+                    backgroundColor: 'rgba(231, 76, 60, 0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true, position: 'top' }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: {
+                            callback: function(value) {
+                                return value + '%';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Throughput Line Chart
+        new Chart(document.getElementById('throughputChart'), {
+            type: 'line',
+            data: {
+                labels: throughputData.labels,
+                datasets: [{
+                    label: 'Throughput (packets/sec)',
+                    data: throughputData.values,
+                    borderColor: '#667eea',
+                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    pointRadius: 4,
+                    pointHoverRadius: 6,
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true, position: 'top' }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return value.toLocaleString() + ' pps';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

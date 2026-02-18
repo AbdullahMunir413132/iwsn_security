@@ -1,0 +1,27 @@
+# Compiled binaries
+c_dpi_engine/bin/
+c_dpi_engine/obj/
+*.o
+*.so
+*.a
+
+# Logs
+**/*.log
+/tmp/
+
+# Generated reports
+*_report.txt
+performance_metrics.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker volumes
+monitoring/*-data/
+
+# Temporary files
+*.tmp
+.DS_Store
