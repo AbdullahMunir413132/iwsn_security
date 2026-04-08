@@ -1,6 +1,6 @@
 /*
- * PCAP File Processing - Main Program
- * Reads PCAP files and processes packets through DPI engine
+ * PCAP File Processing & Live Capture - Main Program
+ * Reads PCAP files or captures live traffic and processes packets through DPI engine
  */
 
 #include <stdio.h>
@@ -8,6 +8,11 @@
 #include <pcap.h>
 #include <sys/stat.h>
 #include "dpi_engine.h"
+#include <string.h>
+#include <pcap.h>
+#include <sys/stat.h>
+#include "dpi_engine.h"
+#include "live_capture.h"
 
 /* ========== Print Engine Statistics ========== */
 
@@ -28,13 +33,8 @@ void print_engine_stats(const dpi_engine_t *engine) {
 /* ========== Main Function ========== */
 
 int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <pcap_file>\n", argv[0]);
-        fprintf(stderr, "Example: %s ../pcap_samples/sample.pcap\n", argv[0]);
-        return 1;
-    }
-    
-    const char *pcap_file = argv[1];
+    const char *pcap_file = NULL;
+    capture_mode_t mode;
     
     printf("╔════════════════════════════════════════════════════════════════╗\n");
     printf("║                                                                ║\n");
@@ -44,6 +44,32 @@ int main(int argc, char *argv[]) {
     printf("║                                                                ║\n");
     printf("╚════════════════════════════════════════════════════════════════╝\n");
     
+    // Determine mode: if a pcap file is given as argument, skip the menu
+    if (argc >= 2) {
+        pcap_file = argv[1];
+        mode = CAPTURE_MODE_PCAP;
+        printf("\n  [Mode] PCAP file provided via argument: %s\n", pcap_file);
+    } else {
+        // Interactive mode selection
+        mode = prompt_capture_mode();
+        if (mode == CAPTURE_MODE_PCAP) {
+            // Ask for PCAP file path
+            static char pcap_path[512];
+            printf("  Enter PCAP file path: ");
+            fflush(stdout);
+            if (fgets(pcap_path, sizeof(pcap_path), stdin) == NULL) {
+                fprintf(stderr, "Error reading input\n");
+                return 1;
+            }
+            pcap_path[strcspn(pcap_path, "\n")] = '\0';
+            if (strlen(pcap_path) == 0) {
+                fprintf(stderr, "No file path provided.\n");
+                return 1;
+            }
+            pcap_file = pcap_path;
+        }
+    }
+    
     // Initialize DPI engine
     dpi_engine_t *engine = dpi_engine_init(10000);  // Max 10k flows
     if (!engine) {
@@ -51,12 +77,47 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
-    // Process PCAP file (collect all data silently)
     pcap_stats_t pcap_stats;
-    if (process_pcap_file(pcap_file, engine, &pcap_stats) != 0) {
-        fprintf(stderr, "Failed to process PCAP file\n");
-        dpi_engine_destroy(engine);
-        return 1;
+    
+    if (mode == CAPTURE_MODE_LIVE) {
+        /* ========== LIVE CAPTURE MODE ========== */
+        live_capture_config_t config;
+        if (prompt_live_capture_config(&config) != 0) {
+            fprintf(stderr, "Failed to configure live capture\n");
+            dpi_engine_destroy(engine);
+            return 1;
+        }
+        
+        live_capture_ctx_t *ctx = live_capture_init(&config, engine);
+        if (!ctx) {
+            dpi_engine_destroy(engine);
+            return 1;
+        }
+        
+        printf("\n[LIVE MODE] Starting real-time capture and DPI analysis...\n\n");
+        
+        if (live_capture_start(ctx) != 0) {
+            fprintf(stderr, "Live capture failed\n");
+            live_capture_destroy(ctx);
+            dpi_engine_destroy(engine);
+            return 1;
+        }
+        
+        // Print live capture summary
+        live_capture_print_summary(ctx);
+        
+        // Copy stats for downstream reporting
+        memcpy(&pcap_stats, &ctx->pcap_stats, sizeof(pcap_stats_t));
+        
+        live_capture_destroy(ctx);
+        
+    } else {
+        /* ========== PCAP FILE MODE (Original) ========== */
+        if (process_pcap_file(pcap_file, engine, &pcap_stats) != 0) {
+            fprintf(stderr, "Failed to process PCAP file\n");
+            dpi_engine_destroy(engine);
+            return 1;
+        }
     }
     
     // ===== PHASE 1: PCAP SUMMARY =====

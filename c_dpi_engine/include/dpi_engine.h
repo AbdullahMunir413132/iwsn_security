@@ -1,6 +1,12 @@
 /*
  * IWSN Security - DPI Engine Header
  * Complete packet parsing (Layer 2-5) + nDPI (Layer 7 partial)
+ * Complete packet parsing (OSI Layers 2-7) with nDPI deep packet inspection
+ * Layer 2: Ethernet, LINUX_SLL, LINUX_SLL2 (Data Link)
+ * Layer 3: IPv4 only (Network) — IPv6 not supported
+ * Layer 4: TCP, UDP, ICMP (Transport)
+ * Layer 5: Flow tracking via 5-tuple (Session)
+ * Layer 7: nDPI + port-based heuristics + custom MQTT parser (Application)
  */
 
 #ifndef DPI_ENGINE_H
@@ -51,6 +57,7 @@ typedef struct {
     uint32_t seq_number;
     uint32_t ack_number;
     uint8_t tcp_flags;
+    uint8_t tcp_header_length;  // TCP header length in bytes (data offset * 4)
     uint16_t window_size;
     uint16_t tcp_checksum;
     uint16_t urgent_pointer;
@@ -213,6 +220,9 @@ typedef struct {
     uint32_t total_packets;
     uint32_t total_flows;
     uint64_t total_bytes;
+    uint32_t ip_packets;          // Only IPv4/IPv6 packets (successfully parsed)
+    uint32_t non_ip_packets;      // Non-IP packets (ARP, LLDP, etc.) skipped
+    uint64_t ip_bytes;            // Bytes of only IP packets
     struct timeval start_time;
     struct timeval end_time;
     double duration_seconds;

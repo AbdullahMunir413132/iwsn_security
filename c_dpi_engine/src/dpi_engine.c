@@ -1,7 +1,8 @@
 /*
  * DPI Engine - Main Implementation
- * Complete Layer 2-5 parsing + nDPI for Layer 7 protocol detection
- * Integrated with MQTT parser for deep application layer analysis
+ * OSI Layer 2-7 parsing with nDPI for deep packet inspection
+ * Layer 2: Ethernet/LINUX_SLL/LINUX_SLL2 | Layer 3: IPv4 only
+ * Layer 4: TCP/UDP/ICMP | Layer 5: Flow tracking | Layer 7: nDPI + MQTT
  */
 
 #include <stdio.h>
@@ -280,6 +281,7 @@ int parse_layer4_with_offset(const uint8_t *packet, uint32_t packet_len, uint32_
         l4->window_size = ntohs(tcp->window);
         l4->tcp_checksum = ntohs(tcp->check);
         l4->urgent_pointer = ntohs(tcp->urg_ptr);
+        l4->tcp_header_length = tcp->doff * 4;  // Data offset field gives TCP header size
         
         // Extract TCP flags
         l4->tcp_flags = 0;
@@ -404,6 +406,15 @@ int parse_packet(dpi_engine_t *engine, const uint8_t *packet,
         } else {
             return -1;
         }
+    }
+    
+    // Validate EtherType before attempting L3+ parsing
+    // Only proceed with IPv4 traffic (0x0800) — IPv6 is not supported (requires 128-bit addresses)
+    uint16_t etype = parsed->layer2.ethertype;
+    if (etype != 0x0800) {
+        // Non-IPv4 packet (ARP 0x0806, IPv6 0x86DD, LLDP 0x88CC, etc.)
+        // Skip L3-L7 parsing — only IPv4 headers are handled
+        return -1;
     }
     
     // Parse Layer 3 - pass the correct offset

@@ -24,7 +24,8 @@ SOURCES_IDS = $(SRC_DIR)/main_with_ids.c \
               $(SRC_DIR)/rule_engine_report.c \
               $(SRC_DIR)/performance_metrics.c \
               $(SRC_DIR)/detailed_reports.c \
-              $(SRC_DIR)/ids_reports.c
+              $(SRC_DIR)/ids_reports.c \
+              $(SRC_DIR)/live_capture.c
 
 # Source files for original DPI only
 SOURCES_DPI = $(SRC_DIR)/main.c \
@@ -34,7 +35,8 @@ SOURCES_DPI = $(SRC_DIR)/main.c \
               $(SRC_DIR)/mqtt_integration.c \
               $(SRC_DIR)/pcap_utils.c \
               $(SRC_DIR)/performance_metrics.c \
-              $(SRC_DIR)/detailed_reports.c
+              $(SRC_DIR)/detailed_reports.c \
+              $(SRC_DIR)/live_capture.c
 
 # Source files for new workflow (DPI → Rule Engine → MQTT Parser)
 SOURCES_NEW = $(SRC_DIR)/main_new_workflow.c \
@@ -50,7 +52,8 @@ SOURCES_NEW = $(SRC_DIR)/main_new_workflow.c \
               $(SRC_DIR)/performance_metrics.c \
               $(SRC_DIR)/detailed_reports.c \
               $(SRC_DIR)/ids_reports.c \
-              $(SRC_DIR)/mqtt_reports.c
+              $(SRC_DIR)/mqtt_reports.c \
+              $(SRC_DIR)/live_capture.c
 
 # Object files
 OBJECTS_IDS = $(SOURCES_IDS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
@@ -139,6 +142,12 @@ help:
 	@echo "Binaries:"
 	@echo "  $(TARGET_IDS) - DPI + Intrusion Detection System"
 	@echo "  $(TARGET_DPI) - DPI only (original)"
+	@echo "  $(TARGET_NEW) - DPI + Rule Engine + MQTT Analyzer"
+	@echo ""
+	@echo "Capture Modes:"
+	@echo "  All binaries support two capture modes:"
+	@echo "  1) PCAP File Analysis (offline) - pass a .pcap file as argument"
+	@echo "  2) Real-Time Live Capture        - run without arguments for menu"
 	@echo ""
 	@echo "Requirements:"
 	@echo "  - nDPI library installed (/usr/local/lib/libndpi.so)"
@@ -149,5 +158,15 @@ help:
 	@echo "  make ids                          # Build IDS version only"
 	@echo "  ./bin/dpi_engine_ids capture.pcap # Run with attack detection"
 	@echo "  ./bin/dpi_engine capture.pcap     # Run without attack detection"
+	@echo "  - sudo/root for live capture mode"
+	@echo ""
+	@echo "Usage Examples:"
+	@echo "  make                                    # Build all versions"
+	@echo "  make ids                                # Build IDS version only"
+	@echo "  ./bin/dpi_engine_ids capture.pcap       # PCAP mode (offline)"
+	@echo "  ./bin/dpi_engine capture.pcap           # PCAP mode (offline)"
+	@echo "  sudo ./bin/dpi_engine_ids               # Live mode (interactive)"
+	@echo "  sudo ./bin/dpi_engine                   # Live mode (interactive)"
+	@echo "  sudo ./bin/dpi_mqtt_analyzer            # Live mode (interactive)"
 
 .PHONY: all ids dpi clean install test-ids test-dpi help directories

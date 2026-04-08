@@ -1,0 +1,16 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB-IWSN
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: iwsn
+      defaultBucket: iwsn_metrics
+      tlsSkipVerify: true
+    secureJsonData:
+      token: iwsn-security-influxdb-token
+    isDefault: true
+    editable: true

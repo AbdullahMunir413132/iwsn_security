@@ -2,6 +2,7 @@
  * IWSN Security - Main Program with Integrated Intrusion Detection
  * Combines DPI Engine with Rule-Based Attack Detection
  * MQTT parsing happens AFTER attack detection for security
+ * Supports both PCAP (offline) and Real-Time (live) capture modes
  */
 
 #include <stdio.h>
@@ -12,6 +13,7 @@
 #include "dpi_engine.h"
 #include "rule_engine.h"
 #include "mqtt_integration.h"
+#include "live_capture.h"
 
 /* ========== Process PCAP File with Attack Detection ========== */
 
@@ -49,11 +51,17 @@ int process_pcap_with_ids(const char *filename, dpi_engine_t *dpi_engine,
     int datalink = pcap_datalink(handle);
     printf("[PCAP] Datalink type: %s\n", pcap_datalink_val_to_name(datalink));
     
-    if (datalink != DLT_EN10MB) {
-        fprintf(stderr, "[Error] Only Ethernet (DLT_EN10MB) is supported\n");
+    // Support Ethernet, Linux cooked capture v1 and v2
+    if (datalink != DLT_EN10MB && datalink != DLT_LINUX_SLL && datalink != DLT_LINUX_SLL2) {
+        fprintf(stderr, "[Error] Unsupported datalink type: %s\n", pcap_datalink_val_to_name(datalink));
+        fprintf(stderr, "[Info]  Supported: Ethernet (DLT_EN10MB), LINUX_SLL, LINUX_SLL2\n");
         pcap_close(handle);
         return -1;
     }
+    
+    // Store datalink type for proper L2 header parsing
+    stats->datalink_type = datalink;
+    dpi_engine->datalink_type = datalink;
     
     printf("[PCAP] Processing packets and analyzing for attacks...\n");
     
@@ -176,14 +184,9 @@ int process_pcap_with_ids(const char *filename, dpi_engine_t *dpi_engine,
 /* ========== Main Function ========== */
 
 int main(int argc, char *argv[]) {
-    if (argc < 2 || argc > 3) {
-        fprintf(stderr, "Usage: %s <pcap_file> [report_output_file]\n", argv[0]);
-        fprintf(stderr, "Example: %s capture.pcap attack_report.txt\n", argv[0]);
-        return 1;
-    }
-    
-    const char *pcap_file = argv[1];
-    const char *report_file = (argc == 3) ? argv[2] : "attack_report.txt";
+    const char *pcap_file = NULL;
+    const char *report_file = "attack_report.txt";
+    capture_mode_t mode;
     
     printf("╔════════════════════════════════════════════════════════════════╗\n");
     printf("║                                                                ║\n");
@@ -192,6 +195,31 @@ int main(int argc, char *argv[]) {
     printf("║                    Powered by nDPI                             ║\n");
     printf("║                                                                ║\n");
     printf("╚════════════════════════════════════════════════════════════════╝\n");
+    
+    // Determine mode from arguments or interactive prompt
+    if (argc >= 2) {
+        pcap_file = argv[1];
+        report_file = (argc >= 3) ? argv[2] : "attack_report.txt";
+        mode = CAPTURE_MODE_PCAP;
+        printf("\n  [Mode] PCAP file provided via argument: %s\n", pcap_file);
+    } else {
+        mode = prompt_capture_mode();
+        if (mode == CAPTURE_MODE_PCAP) {
+            static char pcap_path[512];
+            printf("  Enter PCAP file path: ");
+            fflush(stdout);
+            if (fgets(pcap_path, sizeof(pcap_path), stdin) == NULL) {
+                fprintf(stderr, "Error reading input\n");
+                return 1;
+            }
+            pcap_path[strcspn(pcap_path, "\n")] = '\0';
+            if (strlen(pcap_path) == 0) {
+                fprintf(stderr, "No file path provided.\n");
+                return 1;
+            }
+            pcap_file = pcap_path;
+        }
+    }
     
     // Initialize DPI engine
     printf("\n[Step 1/4] Initializing DPI Engine...\n");
@@ -210,15 +238,59 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
-    // Process PCAP file
-    printf("\n[Step 3/4] Processing PCAP file with detailed packet analysis...\n");
-    printf("[INFO] This will show per-packet DPI analysis and attack detection\n");
     pcap_stats_t pcap_stats;
-    if (process_pcap_with_ids(pcap_file, dpi_engine, rule_engine, &pcap_stats) != 0) {
-        fprintf(stderr, "Failed to process PCAP file\n");
-        rule_engine_destroy(rule_engine);
-        dpi_engine_destroy(dpi_engine);
-        return 1;
+    
+    if (mode == CAPTURE_MODE_LIVE) {
+        /* ========== LIVE CAPTURE MODE WITH IDS ========== */
+        live_capture_config_t config;
+        if (prompt_live_capture_config(&config) != 0) {
+            fprintf(stderr, "Failed to configure live capture\n");
+            rule_engine_destroy(rule_engine);
+            dpi_engine_destroy(dpi_engine);
+            return 1;
+        }
+        
+        live_capture_ctx_t *ctx = live_capture_init(&config, dpi_engine);
+        if (!ctx) {
+            rule_engine_destroy(rule_engine);
+            dpi_engine_destroy(dpi_engine);
+            return 1;
+        }
+        
+        // Enable IDS mode for real-time attack detection
+        ctx->ids_mode = 1;
+        ctx->rule_engine = rule_engine;
+        ctx->ids_callback = (ids_packet_callback_t)rule_engine_analyze_packet;
+        
+        printf("\n[Step 3/4] Starting real-time capture with IDS...\n");
+        printf("[INFO] Packets will be analyzed for attacks in real-time\n\n");
+        
+        if (live_capture_start(ctx) != 0) {
+            fprintf(stderr, "Live capture failed\n");
+            live_capture_destroy(ctx);
+            rule_engine_destroy(rule_engine);
+            dpi_engine_destroy(dpi_engine);
+            return 1;
+        }
+        
+        // Print live capture summary
+        live_capture_print_summary(ctx);
+        
+        // Copy stats for downstream reporting
+        memcpy(&pcap_stats, &ctx->pcap_stats, sizeof(pcap_stats_t));
+        
+        live_capture_destroy(ctx);
+        
+    } else {
+        /* ========== PCAP FILE MODE (Original) ========== */
+        printf("\n[Step 3/4] Processing PCAP file with detailed packet analysis...\n");
+        printf("[INFO] This will show per-packet DPI analysis and attack detection\n");
+        if (process_pcap_with_ids(pcap_file, dpi_engine, rule_engine, &pcap_stats) != 0) {
+            fprintf(stderr, "Failed to process PCAP file\n");
+            rule_engine_destroy(rule_engine);
+            dpi_engine_destroy(dpi_engine);
+            return 1;
+        }
     }
     
     // Analyze all flows for attack patterns (silent mode)

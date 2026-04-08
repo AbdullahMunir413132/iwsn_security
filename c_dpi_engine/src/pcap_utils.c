@@ -69,7 +69,16 @@ int process_pcap_file(const char *filename, dpi_engine_t *engine, pcap_stats_t *
         }
         stats->end_time = header->ts;
         
-        // Parse packet
+        // Update per-packet statistics (for ALL packets regardless of parse result)
+        stats->total_bytes += header->caplen;
+        if (header->caplen < stats->min_packet_size) {
+            stats->min_packet_size = header->caplen;
+        }
+        if (header->caplen > stats->max_packet_size) {
+            stats->max_packet_size = header->caplen;
+        }
+        
+        // Parse packet through DPI engine
         parsed_packet_t parsed;
         if (parse_packet(engine, packet, header->caplen, header->ts, &parsed) == 0) {
             // Set packet number
@@ -80,21 +89,19 @@ int process_pcap_file(const char *filename, dpi_engine_t *engine, pcap_stats_t *
                 store_packet_in_flow(parsed.flow, &parsed);
             }
             
-            // Update statistics
-            stats->total_bytes += header->caplen;
-            if (header->caplen < stats->min_packet_size) {
-                stats->min_packet_size = header->caplen;
-            }
-            if (header->caplen > stats->max_packet_size) {
-                stats->max_packet_size = header->caplen;
-            }
-            
-            // Progress indicator every 1000 packets
-            if (packet_count % 1000 == 0) {
-                printf("  ... processed %u packets, %u flows detected\r", 
-                       packet_count, engine->flow_count);
-                fflush(stdout);
-            }
+            // Track IP packet bytes separately
+            stats->ip_bytes += header->caplen;
+            stats->ip_packets++;
+        } else {
+            // Non-IP or unparseable packet
+            stats->non_ip_packets++;
+        }
+        
+        // Progress indicator every 1000 packets
+        if (packet_count % 1000 == 0) {
+            printf("  ... processed %u packets, %u flows detected\r", 
+                   packet_count, engine->flow_count);
+            fflush(stdout);
         }
     }
     
@@ -114,7 +121,8 @@ int process_pcap_file(const char *filename, dpi_engine_t *engine, pcap_stats_t *
                               (stats->end_time.tv_usec - stats->start_time.tv_usec) / 1000000.0;
     
     printf("\n[PCAP] File processing complete\n");
-    printf("[PCAP] Total packets: %u\n", packet_count);
+    printf("[PCAP] Total packets: %u (IP: %u, Non-IP: %u)\n", 
+           packet_count, stats->ip_packets, stats->non_ip_packets);
     printf("[PCAP] Total flows: %u\n", engine->flow_count);
     
     pcap_close(handle);
@@ -159,6 +167,8 @@ void print_pcap_summary(const pcap_stats_t *stats) {
     printf("\n[PACKET STATISTICS]\n");
     printf("═══════════════════════════════════════════════════════════════\n");
     printf("  Total Packets:   %u\n", stats->total_packets);
+    printf("    IP Packets:    %u\n", stats->ip_packets);
+    printf("    Non-IP Packets:%u (ARP, LLDP, etc.)\n", stats->non_ip_packets);
     printf("  Total Bytes:     %lu bytes (%.2f KB, %.2f MB)\n", 
            stats->total_bytes,
            stats->total_bytes / 1024.0,
@@ -172,9 +182,9 @@ void print_pcap_summary(const pcap_stats_t *stats) {
     printf("  Total Flows:     %u\n", stats->total_flows);
     if (stats->total_flows > 0) {
         printf("  Avg Packets/Flow:%.2f\n", 
-               (double)stats->total_packets / stats->total_flows);
+               (double)stats->ip_packets / stats->total_flows);
         printf("  Avg Bytes/Flow:  %.2f\n", 
-               (double)stats->total_bytes / stats->total_flows);
+               (double)stats->ip_bytes / stats->total_flows);
     }
     
     printf("\n═══════════════════════════════════════════════════════════════\n");

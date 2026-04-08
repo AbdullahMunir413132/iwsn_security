@@ -5,6 +5,7 @@
  * 3. MQTT Parser processes filtered MQTT flows and displays sensor values
  * 
  * WITH COMPREHENSIVE PERFORMANCE METRICS TRACKING!
+ * Supports both PCAP (offline) and Real-Time (live) capture modes
  */
 
 #include <stdio.h>
@@ -13,6 +14,7 @@
 #include <unistd.h>
 #include <pcap.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include "dpi_engine.h"
 #include "rule_engine.h"
 #include "mqtt_parser.h"
@@ -20,17 +22,13 @@
 #include "detailed_reports.h"
 #include "ids_reports.h"
 #include "mqtt_reports.h"
+#include "live_capture.h"
 
 /* ========== Main Program ========== */
 
 int main(int argc, char *argv[]) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s <pcap_file>\n", argv[0]);
-        fprintf(stderr, "Example: %s /tmp/capture.pcap\n", argv[0]);
-        return 1;
-    }
-    
-    const char *pcap_file = argv[1];
+    const char *pcap_file = NULL;
+    capture_mode_t mode;
     
     printf("╔════════════════════════════════════════════════════════════════╗\n");
     printf("║                                                                ║\n");
@@ -40,15 +38,41 @@ int main(int argc, char *argv[]) {
     printf("║                                                                ║\n");
     printf("╚════════════════════════════════════════════════════════════════╝\n");
     
+    // Determine mode from arguments or interactive prompt
+    if (argc >= 2) {
+        pcap_file = argv[1];
+        mode = CAPTURE_MODE_PCAP;
+        printf("\n  [Mode] PCAP file provided via argument: %s\n", pcap_file);
+    } else {
+        mode = prompt_capture_mode();
+        if (mode == CAPTURE_MODE_PCAP) {
+            static char pcap_path[512];
+            printf("  Enter PCAP file path: ");
+            fflush(stdout);
+            if (fgets(pcap_path, sizeof(pcap_path), stdin) == NULL) {
+                fprintf(stderr, "Error reading input\n");
+                return 1;
+            }
+            pcap_path[strcspn(pcap_path, "\n")] = '\0';
+            if (strlen(pcap_path) == 0) {
+                fprintf(stderr, "No file path provided.\n");
+                return 1;
+            }
+            pcap_file = pcap_path;
+        }
+    }
+    
     // ===== INITIALIZE PERFORMANCE METRICS =====
     system_performance_t perf_metrics;
     perf_metrics_init(&perf_metrics);
-    strncpy(perf_metrics.pcap_filename, pcap_file, sizeof(perf_metrics.pcap_filename) - 1);
-    
-    // Get PCAP file size
-    struct stat st;
-    if (stat(pcap_file, &st) == 0) {
-        perf_metrics.pcap_file_size_bytes = st.st_size;
+    if (pcap_file) {
+        snprintf(perf_metrics.pcap_filename, sizeof(perf_metrics.pcap_filename), "%s", pcap_file);
+        struct stat st;
+        if (stat(pcap_file, &st) == 0) {
+            perf_metrics.pcap_file_size_bytes = st.st_size;
+        }
+    } else {
+        snprintf(perf_metrics.pcap_filename, sizeof(perf_metrics.pcap_filename), "LIVE_CAPTURE");
     }
     
     // ===== STEP 1: DPI ENGINE - Process ALL Packets =====
@@ -63,12 +87,51 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
-    // Process PCAP file through DPI
     pcap_stats_t pcap_stats;
-    if (process_pcap_file(pcap_file, dpi_engine, &pcap_stats) != 0) {
-        fprintf(stderr, "Failed to process PCAP file\n");
-        dpi_engine_destroy(dpi_engine);
-        return 1;
+    
+    if (mode == CAPTURE_MODE_LIVE) {
+        /* ========== LIVE CAPTURE MODE ========== */
+        live_capture_config_t config;
+        if (prompt_live_capture_config(&config) != 0) {
+            fprintf(stderr, "Failed to configure live capture\n");
+            dpi_engine_destroy(dpi_engine);
+            return 1;
+        }
+        
+        live_capture_ctx_t *ctx = live_capture_init(&config, dpi_engine);
+        if (!ctx) {
+            dpi_engine_destroy(dpi_engine);
+            return 1;
+        }
+        
+        printf("\n[LIVE MODE] Starting real-time capture with DPI analysis...\n\n");
+        
+        // Reset DPI timer to exclude user interaction/config time
+        gettimeofday(&perf_metrics.dpi_metrics.start_time, NULL);
+        
+        if (live_capture_start(ctx) != 0) {
+            fprintf(stderr, "Live capture failed\n");
+            live_capture_destroy(ctx);
+            dpi_engine_destroy(dpi_engine);
+            return 1;
+        }
+        
+        // Print live capture summary
+        live_capture_print_summary(ctx);
+        
+        // Copy stats for downstream reporting
+        memcpy(&pcap_stats, &ctx->pcap_stats, sizeof(pcap_stats_t));
+        perf_metrics.pcap_file_size_bytes = ctx->stats.bytes_captured;
+        
+        live_capture_destroy(ctx);
+        
+    } else {
+        /* ========== PCAP FILE MODE (Original) ========== */
+        if (process_pcap_file(pcap_file, dpi_engine, &pcap_stats) != 0) {
+            fprintf(stderr, "Failed to process PCAP file\n");
+            dpi_engine_destroy(dpi_engine);
+            return 1;
+        }
     }
     
     // Update DPI metrics

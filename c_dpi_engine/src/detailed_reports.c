@@ -59,6 +59,8 @@ void generate_dpi_detailed_report(dpi_engine_t *engine, pcap_stats_t *pcap_stats
     fprintf(fp, "[PACKET STATISTICS]\n");
     fprintf(fp, "═══════════════════════════════════════════════════════════════\n");
     fprintf(fp, "  Total Packets:   %u\n", pcap_stats->total_packets);
+    fprintf(fp, "    IP Packets:    %u (analyzed by DPI)\n", pcap_stats->ip_packets);
+    fprintf(fp, "    Non-IP Packets:%u (ARP, LLDP, etc. - skipped)\n", pcap_stats->non_ip_packets);
     fprintf(fp, "  Total Bytes:     %lu bytes (%.2f KB, %.2f MB)\n",
            pcap_stats->total_bytes,
            pcap_stats->total_bytes / 1024.0,
@@ -74,6 +76,8 @@ void generate_dpi_detailed_report(dpi_engine_t *engine, pcap_stats_t *pcap_stats
     if (pcap_stats->total_flows > 0) {
         fprintf(fp, "  Avg Packets/Flow:%.2f\n", (double)pcap_stats->total_packets / pcap_stats->total_flows);
         fprintf(fp, "  Avg Bytes/Flow:  %.2f\n\n", (double)pcap_stats->total_bytes / pcap_stats->total_flows);
+        fprintf(fp, "  Avg Packets/Flow:%.2f\n", (double)pcap_stats->ip_packets / pcap_stats->total_flows);
+        fprintf(fp, "  Avg Bytes/Flow:  %.2f\n\n", (double)pcap_stats->ip_bytes / pcap_stats->total_flows);
     } else {
         fprintf(fp, "  Avg Packets/Flow:N/A\n");
         fprintf(fp, "  Avg Bytes/Flow:  N/A\n\n");
@@ -108,6 +112,11 @@ void generate_dpi_detailed_report(dpi_engine_t *engine, pcap_stats_t *pcap_stats
         if (flow->protocol == 6) fprintf(fp, "(TCP)");
         else if (flow->protocol == 17) fprintf(fp, "(UDP)");
         else if (flow->protocol == 1) fprintf(fp, "(ICMP)");
+        else if (flow->protocol == 2) fprintf(fp, "(IGMP)");
+        else if (flow->protocol == 47) fprintf(fp, "(GRE)");
+        else if (flow->protocol == 50) fprintf(fp, "(ESP)");
+        else if (flow->protocol == 51) fprintf(fp, "(AH)");
+        else if (flow->protocol == 0) fprintf(fp, "(HOPOPT/Unknown)");
         fprintf(fp, "\n\n");
         
         // Time Information
@@ -236,6 +245,7 @@ void generate_dpi_detailed_report(dpi_engine_t *engine, pcap_stats_t *pcap_stats
             // Layer 4
             fprintf(fp, "[LAYER 4 - TRANSPORT]\n");
             if (pkt->layer4.protocol == 6) {  // TCP
+                fprintf(fp, "  Protocol:        TCP (6)\n");
                 fprintf(fp, "  Source Port:     %u\n", pkt->layer4.src_port);
                 fprintf(fp, "  Destination Port:%u\n", pkt->layer4.dst_port);
                 fprintf(fp, "  Sequence Number: %u\n", pkt->layer4.seq_number);
@@ -249,12 +259,23 @@ void generate_dpi_detailed_report(dpi_engine_t *engine, pcap_stats_t *pcap_stats
                 if (pkt->layer4.tcp_flags & 0x08) fprintf(fp, "PSH ");
                 fprintf(fp, "\n\n");
             } else if (pkt->layer4.protocol == 17) {  // UDP
+                fprintf(fp, "  Protocol:        UDP (17)\n");
                 fprintf(fp, "  Source Port:     %u\n", pkt->layer4.src_port);
                 fprintf(fp, "  Destination Port:%u\n", pkt->layer4.dst_port);
                 fprintf(fp, "  UDP Length:      %u\n\n", pkt->layer4.udp_length);
             } else if (pkt->layer4.protocol == 1) {  // ICMP
                 fprintf(fp, "  ICMP Type:       %u\n", pkt->layer4.icmp_type);
                 fprintf(fp, "  ICMP Code:       %u\n\n", pkt->layer4.icmp_code);
+                fprintf(fp, "  Protocol:        ICMP (1)\n");
+                fprintf(fp, "  ICMP Type:       %u\n", pkt->layer4.icmp_type);
+                fprintf(fp, "  ICMP Code:       %u\n\n", pkt->layer4.icmp_code);
+            } else {
+                fprintf(fp, "  Protocol:        %u\n", pkt->layer4.protocol);
+                if (pkt->layer4.src_port > 0 || pkt->layer4.dst_port > 0) {
+                    fprintf(fp, "  Source Port:     %u\n", pkt->layer4.src_port);
+                    fprintf(fp, "  Destination Port:%u\n", pkt->layer4.dst_port);
+                }
+                fprintf(fp, "\n");
             }
             
             // Layer 5
