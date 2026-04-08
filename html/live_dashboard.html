@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IWSN Security — Live Sensor Dashboard</title>
+    <meta name="description" content="Real-time ESP32 sensor monitoring dashboard for IWSN Security project">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #111827;
+            --bg-card: #1a1f35;
+            --bg-card-hover: #1f2545;
+            --border: #2a3055;
+            --text-primary: #e2e8f0;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-blue: #3b82f6;
+            --accent-cyan: #06b6d4;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --accent-orange: #f59e0b;
+            --accent-purple: #8b5cf6;
+            --accent-pink: #ec4899;
+            --glow-blue: rgba(59, 130, 246, 0.15);
+            --glow-green: rgba(16, 185, 129, 0.15);
+            --glow-red: rgba(239, 68, 68, 0.15);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated background grid */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-image: 
+                radial-gradient(circle at 20% 50%, rgba(59, 130, 246, 0.05) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.05) 0%, transparent 50%),
+                radial-gradient(circle at 50% 80%, rgba(6, 182, 212, 0.05) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+            padding: 32px;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.1));
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0; left: -100%;
+            width: 200%; height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent-cyan), var(--accent-blue), transparent);
+            animation: headerScan 4s ease-in-out infinite;
+        }
+
+        @keyframes headerScan {
+            0%, 100% { left: -100%; }
+            50% { left: 0%; }
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .header .subtitle {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            font-weight: 400;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-top: 12px;
+        }
+
+        .status-badge.connected {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--accent-green);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .status-badge.disconnected {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--accent-red);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .status-dot.active { background: var(--accent-green); }
+        .status-dot.inactive { background: var(--accent-red); }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+
+        /* Stats Bar */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card:hover {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 20px var(--glow-blue);
+            transform: translateY(-2px);
+        }
+
+        .stat-card .stat-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            margin-bottom: 4px;
+        }
+
+        .stat-card .stat-label {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Sensor grid */
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 24px;
+            margin-bottom: 28px;
+        }
+
+        .sensor-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .sensor-panel:hover {
+            background: var(--bg-card-hover);
+            transform: translateY(-2px);
+        }
+
+        .sensor-panel .panel-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .sensor-icon {
+            width: 48px; height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .sensor-icon.ultrasonic {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(6, 182, 212, 0.2));
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .sensor-icon.ir {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.2), rgba(245, 158, 11, 0.2));
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .sensor-icon.heartbeat {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(6, 182, 212, 0.2));
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .sensor-icon.alert {
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(239, 68, 68, 0.2));
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .panel-title {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .panel-subtitle {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .big-value {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 3rem;
+            font-weight: 700;
+            line-height: 1;
+            margin: 16px 0 8px;
+        }
+
+        .big-value .unit { font-size: 1.2rem; color: var(--text-muted); font-weight: 400; }
+
+        /* Distance bar */
+        .distance-bar-container {
+            margin: 16px 0;
+        }
+
+        .distance-bar-bg {
+            height: 12px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .distance-bar-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 0.5s ease, background 0.5s ease;
+            position: relative;
+        }
+
+        .distance-bar-fill::after {
+            content: '';
+            position: absolute;
+            top: 0; right: 0;
+            width: 20px; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3));
+            border-radius: 0 6px 6px 0;
+        }
+
+        .distance-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 6px;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* IR State */
+        .ir-state {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin: 16px 0;
+        }
+
+        .ir-indicator {
+            width: 80px; height: 80px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            transition: all 0.3s ease;
+        }
+
+        .ir-indicator.clear {
+            background: radial-gradient(circle, rgba(16, 185, 129, 0.3), transparent);
+            border: 2px solid var(--accent-green);
+            box-shadow: 0 0 30px rgba(16, 185, 129, 0.2);
+        }
+
+        .ir-indicator.obstacle {
+            background: radial-gradient(circle, rgba(239, 68, 68, 0.3), transparent);
+            border: 2px solid var(--accent-red);
+            box-shadow: 0 0 30px rgba(239, 68, 68, 0.3);
+            animation: alertPulse 1s ease-in-out infinite;
+        }
+
+        @keyframes alertPulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(239, 68, 68, 0.2); }
+            50% { box-shadow: 0 0 40px rgba(239, 68, 68, 0.5); }
+        }
+
+        /* WiFi signal bars */
+        .wifi-bars {
+            display: flex;
+            align-items: flex-end;
+            gap: 3px;
+            height: 24px;
+        }
+
+        .wifi-bar {
+            width: 6px;
+            background: var(--border);
+            border-radius: 2px;
+            transition: all 0.3s ease;
+        }
+
+        .wifi-bar.active { background: var(--accent-green); }
+        .wifi-bar:nth-child(1) { height: 6px; }
+        .wifi-bar:nth-child(2) { height: 12px; }
+        .wifi-bar:nth-child(3) { height: 18px; }
+        .wifi-bar:nth-child(4) { height: 24px; }
+
+        /* Message Log */
+        .log-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 28px;
+        }
+
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .log-entries {
+            max-height: 350px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
+        }
+
+        .log-entry {
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin-bottom: 4px;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            transition: background 0.2s ease;
+            border-left: 3px solid transparent;
+        }
+
+        .log-entry:hover { background: rgba(255,255,255,0.03); }
+        .log-entry.ultrasonic { border-left-color: var(--accent-blue); }
+        .log-entry.ir { border-left-color: var(--accent-red); }
+        .log-entry.heartbeat { border-left-color: var(--accent-green); }
+        .log-entry.combined { border-left-color: var(--accent-purple); }
+        .log-entry.new { animation: fadeIn 0.3s ease; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .log-time { color: var(--text-muted); min-width: 85px; }
+        .log-topic { color: var(--accent-cyan); min-width: 200px; }
+        .log-payload { color: var(--text-secondary); word-break: break-all; }
+
+        /* Connection prompt */
+        .connect-prompt {
+            text-align: center;
+            padding: 60px 24px;
+            background: var(--bg-card);
+            border: 1px dashed var(--border);
+            border-radius: 16px;
+            margin-bottom: 28px;
+        }
+
+        .connect-prompt h2 { margin-bottom: 12px; }
+        .connect-prompt p { color: var(--text-secondary); margin-bottom: 20px; }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 28px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(59, 130, 246, 0.3);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, var(--accent-red), var(--accent-pink));
+            color: white;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.85rem;
+        }
+
+        .info-row .label { color: var(--text-muted); }
+        .info-row .val { font-family: 'JetBrains Mono', monospace; color: var(--text-primary); }
+
+        .mini-chart {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 50px;
+            margin: 12px 0;
+        }
+
+        .chart-bar {
+            flex: 1;
+            min-width: 4px;
+            background: var(--accent-blue);
+            border-radius: 2px 2px 0 0;
+            transition: height 0.3s ease;
+            opacity: 0.7;
+        }
+
+        .chart-bar:hover { opacity: 1; }
+
+        @media (max-width: 768px) {
+            .sensor-grid { grid-template-columns: 1fr; }
+            .stats-bar { grid-template-columns: repeat(2, 1fr); }
+            .big-value { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header" id="header">
+            <h1>🛡️ IWSN Security — Live Sensor Dashboard</h1>
+            <p class="subtitle">ESP-WROOM-32D • SR04M-2 Ultrasonic • IR Obstacle Avoidance • MQTT over WiFi</p>
+            <div class="status-badge disconnected" id="statusBadge">
+                <span class="status-dot inactive" id="statusDot"></span>
+                <span id="statusText">Waiting for data...</span>
+            </div>
+        </div>
+
+        <!-- Stats Bar -->
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-value" id="totalMessages" style="color: var(--accent-blue)">0</div>
+                <div class="stat-label">Total Messages</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="msgRate" style="color: var(--accent-cyan)">0.0</div>
+                <div class="stat-label">Messages/sec</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="obstacleCount" style="color: var(--accent-red)">0</div>
+                <div class="stat-label">Obstacles Detected</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="avgDistance" style="color: var(--accent-green)">--</div>
+                <div class="stat-label">Avg Distance (cm)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="uptimeDisplay" style="color: var(--accent-purple)">--</div>
+                <div class="stat-label">Session Duration</div>
+            </div>
+        </div>
+
+        <!-- Sensor Panels -->
+        <div class="sensor-grid">
+            <!-- Ultrasonic Sensor Panel -->
+            <div class="sensor-panel" id="ultrasonicPanel">
+                <div class="panel-header">
+                    <div class="sensor-icon ultrasonic">📏</div>
+                    <div>
+                        <div class="panel-title">SR04M-2 Ultrasonic Sensor</div>
+                        <div class="panel-subtitle">UART Mode • GPIO5/GPIO18 • Range: 20-600cm</div>
+                    </div>
+                </div>
+                <div class="big-value" id="distanceValue" style="color: var(--accent-blue)">
+                    -- <span class="unit">cm</span>
+                </div>
+                <div class="distance-bar-container">
+                    <div class="distance-bar-bg">
+                        <div class="distance-bar-fill" id="distanceBar" style="width: 0%; background: linear-gradient(90deg, var(--accent-red), var(--accent-orange), var(--accent-green), var(--accent-blue))"></div>
+                    </div>
+                    <div class="distance-labels">
+                        <span>0cm</span><span>100cm</span><span>200cm</span><span>300cm</span><span>400cm+</span>
+                    </div>
+                </div>
+                <div class="mini-chart" id="distanceChart"></div>
+                <div class="info-row">
+                    <span class="label">Min Distance</span>
+                    <span class="val" id="minDistance">--</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Max Distance</span>
+                    <span class="val" id="maxDistance">--</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Status</span>
+                    <span class="val" id="ultrasonicStatus">Waiting...</span>
+                </div>
+            </div>
+
+            <!-- IR Obstacle Panel -->
+            <div class="sensor-panel" id="irPanel">
+                <div class="panel-header">
+                    <div class="sensor-icon ir">🔴</div>
+                    <div>
+                        <div class="panel-title">IR Obstacle Avoidance Sensor</div>
+                        <div class="panel-subtitle">Digital Output • GPIO4 • Active LOW</div>
+                    </div>
+                </div>
+                <div class="ir-state">
+                    <div class="ir-indicator clear" id="irIndicator">✅</div>
+                    <div>
+                        <div class="big-value" id="irState" style="color: var(--accent-green); font-size: 1.8rem;">
+                            PATH CLEAR
+                        </div>
+                        <div style="color: var(--text-muted); font-size: 0.85rem;" id="irDetail">
+                            No obstacles detected
+                        </div>
+                    </div>
+                </div>
+                <div class="info-row">
+                    <span class="label">Obstacles Detected</span>
+                    <span class="val" id="irObstacles">0</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Clear Readings</span>
+                    <span class="val" id="irClears">0</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Detection Rate</span>
+                    <span class="val" id="irRate">0%</span>
+                </div>
+            </div>
+
+            <!-- Node Health Panel -->
+            <div class="sensor-panel" id="healthPanel">
+                <div class="panel-header">
+                    <div class="sensor-icon heartbeat">💓</div>
+                    <div>
+                        <div class="panel-title">ESP32 Node Health</div>
+                        <div class="panel-subtitle">esp32_iwsn_node_01 • StormFiber-5658</div>
+                    </div>
+                </div>
+                <div class="info-row">
+                    <span class="label">WiFi Signal</span>
+                    <span class="val" id="wifiSignal">
+                        <span class="wifi-bars" id="wifiBars">
+                            <div class="wifi-bar"></div>
+                            <div class="wifi-bar"></div>
+                            <div class="wifi-bar"></div>
+                            <div class="wifi-bar"></div>
+                        </span>
+                    </span>
+                </div>
+                <div class="info-row">
+                    <span class="label">RSSI</span>
+                    <span class="val" id="rssiValue">-- dBm</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Node Uptime</span>
+                    <span class="val" id="nodeUptime">--</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Free Heap</span>
+                    <span class="val" id="freeHeap">--</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">IP Address</span>
+                    <span class="val" id="nodeIP">--</span>
+                </div>
+                <div class="info-row">
+                    <span class="label">Messages Sent</span>
+                    <span class="val" id="nodeMessages">--</span>
+                </div>
+            </div>
+
+            <!-- Alerts Panel -->
+            <div class="sensor-panel" id="alertsPanel">
+                <div class="panel-header">
+                    <div class="sensor-icon alert">⚠️</div>
+                    <div>
+                        <div class="panel-title">Security & Proximity Alerts</div>
+                        <div class="panel-subtitle">Real-time alert feed from combined sensor analysis</div>
+                    </div>
+                </div>
+                <div id="alertsList" style="max-height: 250px; overflow-y: auto;">
+                    <div style="color: var(--text-muted); text-align: center; padding: 30px;">
+                        No alerts yet — monitoring...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Message Log -->
+        <div class="log-container">
+            <div class="log-header">
+                <div>
+                    <span style="font-weight: 600; font-size: 1.1rem;">📡 Live MQTT Message Feed</span>
+                    <span style="color: var(--text-muted); font-size: 0.8rem; margin-left: 12px;">Latest 100 messages</span>
+                </div>
+                <button class="btn btn-primary" onclick="clearLog()" style="padding: 8px 16px; font-size: 0.8rem;">Clear Log</button>
+            </div>
+            <div class="log-entries" id="logEntries">
+                <div style="color: var(--text-muted); text-align: center; padding: 30px;">
+                    Waiting for MQTT messages...
+                </div>
+            </div>
+        </div>
+
+        <!-- Connection Info -->
+        <div style="text-align: center; color: var(--text-muted); font-size: 0.8rem; padding: 20px;">
+            <p>🛡️ IWSN Security Project • MQTT Broker: 192.168.1.20:1883 • ESP-WROOM-32D + SR04M-2 + IR Sensor</p>
+            <p style="margin-top: 4px;">To feed data: run <code style="background: var(--bg-card); padding: 2px 8px; border-radius: 4px; font-family: 'JetBrains Mono', monospace;">python3 scripts/live_mqtt_monitor.py --log</code> or connect ESP32</p>
+        </div>
+    </div>
+
+    <script>
+        // ══════════════════════════════════════════════════════════════
+        //  DATA STATE
+        // ══════════════════════════════════════════════════════════════
+        
+        const state = {
+            totalMessages: 0,
+            startTime: Date.now(),
+            lastMessageTime: null,
+            
+            // Ultrasonic
+            lastDistance: null,
+            minDistance: Infinity,
+            maxDistance: 0,
+            distanceHistory: [],
+            
+            // IR
+            obstacleCount: 0,
+            clearCount: 0,
+            lastObstacle: null,
+            
+            // Health
+            rssi: null,
+            uptime: null,
+            freeHeap: null,
+            nodeIP: null,
+            nodeMessages: null,
+            
+            // Alerts
+            alerts: [],
+            
+            // Log
+            logEntries: []
+        };
+
+        // ══════════════════════════════════════════════════════════════
+        //  SIMULATED DATA FEED (for when ESP32 isn't connected)
+        //  In production, this would be replaced by WebSocket/SSE from broker
+        // ══════════════════════════════════════════════════════════════
+
+        function simulateMessage() {
+            const r = Math.random();
+            let topic, payload;
+            
+            if (r < 0.35) {
+                const dist = 20 + Math.random() * 300;
+                topic = 'iwsn/sensors/ultrasonic/distance';
+                payload = JSON.stringify({
+                    sensor_id: 'SR04M-2', type: 'ultrasonic',
+                    distance_cm: Math.round(dist * 100) / 100,
+                    unit: 'cm', status: dist < 20 ? 'close_range' : 'valid',
+                    reading_num: state.totalMessages, timestamp: Math.floor(Date.now()/1000)
+                });
+            } else if (r < 0.65) {
+                const detected = Math.random() < 0.2;
+                topic = 'iwsn/sensors/ir/obstacle';
+                payload = JSON.stringify({
+                    sensor_id: 'IR_OA_01', type: 'ir_obstacle',
+                    obstacle_detected: detected, raw_value: detected ? 0 : 1,
+                    status: 'active', reading_num: state.totalMessages,
+                    timestamp: Math.floor(Date.now()/1000)
+                });
+            } else if (r < 0.8) {
+                topic = 'iwsn/sensors/combined/reading';
+                const dist = state.lastDistance || 50;
+                const obs = state.lastObstacle || false;
+                let alert = 'NONE', level = 'LOW';
+                if (dist < 15 && obs) { alert = 'PROXIMITY_WARNING'; level = 'HIGH'; }
+                else if (obs) { alert = 'OBSTACLE_DETECTED'; level = 'MEDIUM'; }
+                payload = JSON.stringify({
+                    node_id: 'esp32_iwsn_node_01', reading_num: state.totalMessages,
+                    ultrasonic: { distance_cm: dist, status: 'valid' },
+                    ir_obstacle: { detected: obs, raw: obs ? 0 : 1 },
+                    alert, alert_level: level, timestamp: Math.floor(Date.now()/1000)
+                });
+            } else {
+                topic = 'iwsn/sensors/status/heartbeat';
+                payload = JSON.stringify({
+                    node_id: 'esp32_iwsn_node_01', type: 'heartbeat',
+                    uptime_seconds: Math.floor((Date.now() - state.startTime) / 1000),
+                    wifi_rssi: -40 - Math.floor(Math.random() * 30),
+                    free_heap: 200000 + Math.floor(Math.random() * 50000),
+                    ip_address: '192.168.1.105',
+                    messages_sent: state.totalMessages,
+                    status: 'online', timestamp: Math.floor(Date.now()/1000)
+                });
+            }
+            
+            processMessage(topic, payload);
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        //  MESSAGE PROCESSING
+        // ══════════════════════════════════════════════════════════════
+
+        function processMessage(topic, payloadStr) {
+            state.totalMessages++;
+            state.lastMessageTime = Date.now();
+            
+            let parsed = {};
+            try { parsed = JSON.parse(payloadStr); } catch(e) { parsed = { raw: payloadStr }; }
+            
+            // Update connection status
+            updateStatus(true);
+            
+            // Route by topic
+            if (topic.includes('ultrasonic')) {
+                handleUltrasonic(parsed);
+            } else if (topic.includes('ir') && topic.includes('obstacle')) {
+                handleIR(parsed);
+            } else if (topic.includes('heartbeat')) {
+                handleHeartbeat(parsed);
+            } else if (topic.includes('combined')) {
+                handleCombined(parsed);
+            }
+            
+            // Add to log
+            addLogEntry(topic, payloadStr);
+            
+            // Update stats
+            updateStats();
+        }
+
+        function handleUltrasonic(data) {
+            const dist = data.distance_cm;
+            if (dist == null) return;
+            
+            state.lastDistance = dist;
+            state.minDistance = Math.min(state.minDistance, dist);
+            state.maxDistance = Math.max(state.maxDistance, dist);
+            state.distanceHistory.push(dist);
+            if (state.distanceHistory.length > 40) state.distanceHistory.shift();
+            
+            // Update UI
+            document.getElementById('distanceValue').innerHTML = 
+                `${dist.toFixed(1)} <span class="unit">cm</span>`;
+            
+            const pct = Math.min(dist / 400 * 100, 100);
+            const bar = document.getElementById('distanceBar');
+            bar.style.width = pct + '%';
+            
+            if (dist < 20) {
+                document.getElementById('distanceValue').style.color = 'var(--accent-red)';
+                document.getElementById('ultrasonicStatus').textContent = '⚠️ Very Close!';
+                document.getElementById('ultrasonicStatus').style.color = 'var(--accent-red)';
+            } else if (dist < 50) {
+                document.getElementById('distanceValue').style.color = 'var(--accent-orange)';
+                document.getElementById('ultrasonicStatus').textContent = '📐 Close Range';
+                document.getElementById('ultrasonicStatus').style.color = 'var(--accent-orange)';
+            } else {
+                document.getElementById('distanceValue').style.color = 'var(--accent-blue)';
+                document.getElementById('ultrasonicStatus').textContent = '✅ Normal';
+                document.getElementById('ultrasonicStatus').style.color = 'var(--accent-green)';
+            }
+            
+            document.getElementById('minDistance').textContent = state.minDistance.toFixed(1) + ' cm';
+            document.getElementById('maxDistance').textContent = state.maxDistance.toFixed(1) + ' cm';
+            
+            // Update chart
+            updateDistanceChart();
+        }
+
+        function handleIR(data) {
+            const detected = data.obstacle_detected;
+            state.lastObstacle = detected;
+            
+            if (detected) {
+                state.obstacleCount++;
+                document.getElementById('irIndicator').className = 'ir-indicator obstacle';
+                document.getElementById('irIndicator').textContent = '⛔';
+                document.getElementById('irState').textContent = 'OBSTACLE!';
+                document.getElementById('irState').style.color = 'var(--accent-red)';
+                document.getElementById('irDetail').textContent = 'Object detected in path';
+            } else {
+                state.clearCount++;
+                document.getElementById('irIndicator').className = 'ir-indicator clear';
+                document.getElementById('irIndicator').textContent = '✅';
+                document.getElementById('irState').textContent = 'PATH CLEAR';
+                document.getElementById('irState').style.color = 'var(--accent-green)';
+                document.getElementById('irDetail').textContent = 'No obstacles detected';
+            }
+            
+            document.getElementById('irObstacles').textContent = state.obstacleCount;
+            document.getElementById('irClears').textContent = state.clearCount;
+            const total = state.obstacleCount + state.clearCount;
+            const rate = total > 0 ? (state.obstacleCount / total * 100).toFixed(1) : 0;
+            document.getElementById('irRate').textContent = rate + '%';
+        }
+
+        function handleHeartbeat(data) {
+            state.rssi = data.wifi_rssi;
+            state.uptime = data.uptime_seconds;
+            state.freeHeap = data.free_heap;
+            state.nodeIP = data.ip_address;
+            state.nodeMessages = data.messages_sent;
+            
+            // WiFi bars
+            const bars = document.querySelectorAll('#wifiBars .wifi-bar');
+            const rssi = data.wifi_rssi || -100;
+            bars.forEach((bar, i) => {
+                const thresholds = [-70, -60, -50, -40];
+                bar.classList.toggle('active', rssi >= thresholds[i]);
+            });
+            
+            document.getElementById('rssiValue').textContent = rssi + ' dBm';
+            
+            if (data.uptime_seconds) {
+                const h = Math.floor(data.uptime_seconds / 3600);
+                const m = Math.floor((data.uptime_seconds % 3600) / 60);
+                const s = data.uptime_seconds % 60;
+                document.getElementById('nodeUptime').textContent = 
+                    `${h}h ${m}m ${s}s`;
+            }
+            
+            if (data.free_heap) {
+                document.getElementById('freeHeap').textContent = 
+                    (data.free_heap / 1024).toFixed(1) + ' KB';
+            }
+            
+            document.getElementById('nodeIP').textContent = data.ip_address || '--';
+            document.getElementById('nodeMessages').textContent = data.messages_sent || '--';
+        }
+
+        function handleCombined(data) {
+            if (data.alert && data.alert !== 'NONE') {
+                const alert = {
+                    time: new Date().toLocaleTimeString(),
+                    type: data.alert,
+                    level: data.alert_level
+                };
+                state.alerts.unshift(alert);
+                if (state.alerts.length > 20) state.alerts.pop();
+                updateAlerts();
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        //  UI UPDATES
+        // ══════════════════════════════════════════════════════════════
+
+        function updateStatus(connected) {
+            const badge = document.getElementById('statusBadge');
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+            
+            badge.className = 'status-badge ' + (connected ? 'connected' : 'disconnected');
+            dot.className = 'status-dot ' + (connected ? 'active' : 'inactive');
+            text.textContent = connected ? 'Receiving data' : 'Disconnected';
+        }
+
+        function updateStats() {
+            document.getElementById('totalMessages').textContent = state.totalMessages;
+            
+            const elapsed = (Date.now() - state.startTime) / 1000;
+            const rate = elapsed > 0 ? (state.totalMessages / elapsed).toFixed(1) : 0;
+            document.getElementById('msgRate').textContent = rate;
+            
+            document.getElementById('obstacleCount').textContent = state.obstacleCount;
+            
+            if (state.distanceHistory.length > 0) {
+                const avg = state.distanceHistory.reduce((a,b) => a+b, 0) / state.distanceHistory.length;
+                document.getElementById('avgDistance').textContent = avg.toFixed(1);
+            }
+            
+            const mins = Math.floor(elapsed / 60);
+            const secs = Math.floor(elapsed % 60);
+            document.getElementById('uptimeDisplay').textContent = `${mins}m ${secs}s`;
+        }
+
+        function updateDistanceChart() {
+            const container = document.getElementById('distanceChart');
+            const history = state.distanceHistory;
+            if (history.length === 0) return;
+            
+            const maxVal = Math.max(...history, 100);
+            container.innerHTML = history.map(d => {
+                const h = Math.max(4, (d / maxVal) * 50);
+                const color = d < 20 ? 'var(--accent-red)' : d < 50 ? 'var(--accent-orange)' : 'var(--accent-blue)';
+                return `<div class="chart-bar" style="height:${h}px; background:${color}" title="${d.toFixed(1)}cm"></div>`;
+            }).join('');
+        }
+
+        function updateAlerts() {
+            const container = document.getElementById('alertsList');
+            if (state.alerts.length === 0) return;
+            
+            container.innerHTML = state.alerts.map(a => {
+                const levelColor = a.level === 'HIGH' ? 'var(--accent-red)' : 
+                                   a.level === 'MEDIUM' ? 'var(--accent-orange)' : 'var(--text-muted)';
+                const icon = a.level === 'HIGH' ? '🚨' : a.level === 'MEDIUM' ? '⚠️' : 'ℹ️';
+                return `<div style="padding:8px 12px; border-left:3px solid ${levelColor}; margin-bottom:4px; border-radius:4px; background:rgba(255,255,255,0.02)">
+                    <span style="color:var(--text-muted); font-size:0.75rem">${a.time}</span>
+                    <span style="margin-left:8px">${icon}</span>
+                    <span style="color:${levelColor}; font-weight:600; margin-left:4px">${a.type}</span>
+                </div>`;
+            }).join('');
+        }
+
+        function addLogEntry(topic, payload) {
+            const time = new Date().toLocaleTimeString('en', { hour12: false, fractionalSecondDigits: 1 });
+            let type = 'default';
+            if (topic.includes('ultrasonic')) type = 'ultrasonic';
+            else if (topic.includes('ir')) type = 'ir';
+            else if (topic.includes('heartbeat')) type = 'heartbeat';
+            else if (topic.includes('combined')) type = 'combined';
+            
+            state.logEntries.unshift({ time, topic, payload, type });
+            if (state.logEntries.length > 100) state.logEntries.pop();
+            
+            const container = document.getElementById('logEntries');
+            const shortPayload = payload.length > 120 ? payload.substring(0, 120) + '...' : payload;
+            
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type} new`;
+            entry.innerHTML = `
+                <span class="log-time">${time}</span>
+                <span class="log-topic">${topic}</span>
+                <span class="log-payload">${shortPayload}</span>
+            `;
+            
+            if (container.firstChild && container.firstChild.style) {
+                container.insertBefore(entry, container.firstChild);
+            } else {
+                container.innerHTML = '';
+                container.appendChild(entry);
+            }
+            
+            // Limit visible entries
+            while (container.children.length > 100) {
+                container.removeChild(container.lastChild);
+            }
+            
+            setTimeout(() => entry.classList.remove('new'), 300);
+        }
+
+        function clearLog() {
+            state.logEntries = [];
+            document.getElementById('logEntries').innerHTML = 
+                '<div style="color: var(--text-muted); text-align: center; padding: 30px;">Log cleared</div>';
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        //  STARTUP — Simulate data for demo (replace with WebSocket)
+        // ══════════════════════════════════════════════════════════════
+
+        // Simulate messages every 2 seconds for demo
+        setInterval(simulateMessage, 2000);
+        
+        // Check for stale connection
+        setInterval(() => {
+            if (state.lastMessageTime && Date.now() - state.lastMessageTime > 15000) {
+                updateStatus(false);
+            }
+        }, 5000);
+    </script>
+</body>
+</html>
