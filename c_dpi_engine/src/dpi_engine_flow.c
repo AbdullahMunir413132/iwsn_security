@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
+#include <pcap.h>
 #include <ndpi/ndpi_api.h>
 #include "dpi_engine.h"
 #include "mqtt_parser.h"
@@ -65,6 +66,8 @@ flow_stats_t* get_or_create_flow(dpi_engine_t *engine,
     
     // Initialize packet storage (allocate for 1000 packets initially)
     new_flow->packet_capacity = 1000;
+    // Initialize packet storage (start small, grows dynamically via realloc)
+    new_flow->packet_capacity = 64;
     new_flow->packets = (parsed_packet_t **)calloc(new_flow->packet_capacity, sizeof(parsed_packet_t *));
     new_flow->packet_count_stored = 0;
     
@@ -172,19 +175,19 @@ void detect_protocol(dpi_engine_t *engine, parsed_packet_t *parsed) {
     
     flow_stats_t *flow = parsed->flow;
     
-    // Skip header based on datalink type
-    // For LINUX_SLL: 16 bytes, LINUX_SLL2: 20 bytes, Ethernet: 14 bytes
-    uint32_t offset = 14;  // Default for Ethernet
-    if (parsed->raw_data_len > 20) {
-        // Try to detect Linux cooked capture by checking protocol field
-        uint16_t arphrd_type = (parsed->raw_data[0] << 8) | parsed->raw_data[1];
-        if (arphrd_type == 1) {  // ARPHRD_ETHER - likely LINUX_SLL
-            offset = 16;  // LINUX_SLL header size
-        }
-        // Check for LINUX_SLL2 signature (protocol field at offset 10-11)
-        if (parsed->raw_data_len > 20 && parsed->raw_data[0] == 0x00 && parsed->raw_data[1] < 0x10) {
-            offset = 20;  // LINUX_SLL2 header size
-        }
+    // Determine L2 header size from actual datalink type (reliable).
+    // For LINUX_SLL: 16 bytes, LINUX_SLL2: 20 bytes, Ethernet: 14 bytes.
+    uint32_t offset;
+    switch (engine->datalink_type) {
+        case DLT_LINUX_SLL2:
+            offset = 20;
+            break;
+        case DLT_LINUX_SLL:
+            offset = 16;
+            break;
+        default:  // DLT_EN10MB (Ethernet)
+            offset = 14;
+            break;
     }
     if (parsed->layer2.has_vlan) offset += 4;
     
@@ -194,28 +197,35 @@ void detect_protocol(dpi_engine_t *engine, parsed_packet_t *parsed) {
         return;
     }
     
-    // Process packet with nDPI (nDPI 4.2.0 API)
+    // Process packet with nDPI (nDPI 5.1.0 API)
     flow->detected_protocol = ndpi_detection_process_packet(
         engine->ndpi,
         flow->ndpi_flow,
         parsed->raw_data + offset,
         parsed->raw_data_len - offset,
-        (uint64_t)parsed->timestamp.tv_sec * 1000 + parsed->timestamp.tv_usec / 1000
+        (uint64_t)parsed->timestamp.tv_sec * 1000 + parsed->timestamp.tv_usec / 1000,
+        NULL  // input_info parameter (new in nDPI 5.x)
     );
     
     // Protocol detection enhancement - force detection after sufficient packets
     if (flow->total_packets >= 10) {
+#if NDPI_MAJOR >= 5
+        if (flow->detected_protocol.proto.app_protocol == NDPI_PROTOCOL_UNKNOWN &&
+            flow->detected_protocol.proto.master_protocol == NDPI_PROTOCOL_UNKNOWN) {
+            flow->detected_protocol = ndpi_detection_giveup(engine->ndpi, flow->ndpi_flow);
+        }
+#else
         if (flow->detected_protocol.app_protocol == NDPI_PROTOCOL_UNKNOWN &&
             flow->detected_protocol.master_protocol == NDPI_PROTOCOL_UNKNOWN) {
             u_int8_t protocol_was_guessed = 0;
-            ndpi_protocol giveup_proto = ndpi_detection_giveup(
+            flow->detected_protocol = ndpi_detection_giveup(
                 engine->ndpi,
                 flow->ndpi_flow,
                 1,  // enable_guess
                 &protocol_was_guessed
             );
-            flow->detected_protocol = giveup_proto;
         }
+#endif
     }
     
     // Get protocol name string - prioritize custom parsers over nDPI
@@ -229,13 +239,23 @@ void detect_protocol(dpi_engine_t *engine, parsed_packet_t *parsed) {
         current_protocol[sizeof(current_protocol) - 1] = '\0';
     } else {
         // Fall back to nDPI detection
+#if NDPI_MAJOR >= 5
+        ndpi_protocol2name(engine->ndpi, flow->detected_protocol.proto,
+                           current_protocol, sizeof(current_protocol));
+#else
         ndpi_protocol2name(engine->ndpi, flow->detected_protocol, 
                            current_protocol, sizeof(current_protocol));
+#endif
         
         // If still unknown at packet level, mark it
         if (strlen(current_protocol) == 0 ||
+#if NDPI_MAJOR >= 5
+            (flow->detected_protocol.proto.app_protocol == NDPI_PROTOCOL_UNKNOWN &&
+             flow->detected_protocol.proto.master_protocol == NDPI_PROTOCOL_UNKNOWN)) {
+#else
             (flow->detected_protocol.app_protocol == NDPI_PROTOCOL_UNKNOWN &&
              flow->detected_protocol.master_protocol == NDPI_PROTOCOL_UNKNOWN)) {
+#endif
             snprintf(current_protocol, sizeof(current_protocol), "Unknown");
         }
     }
@@ -405,13 +425,24 @@ void store_packet_in_flow(flow_stats_t *flow, const parsed_packet_t *parsed) {
     
     // Expand array if needed
     if (flow->packet_count_stored >= flow->packet_capacity) {
-        flow->packet_capacity *= 2;
-        flow->packets = (parsed_packet_t **)realloc(flow->packets, 
-                                                     flow->packet_capacity * sizeof(parsed_packet_t *));
+        uint32_t new_capacity = flow->packet_capacity * 2;
+        parsed_packet_t **new_packets = (parsed_packet_t **)realloc(flow->packets, 
+                                                     new_capacity * sizeof(parsed_packet_t *));
+        if (!new_packets) {
+            fprintf(stderr, "[Error] Failed to expand packet storage (flow has %u packets)\n",
+                    flow->packet_count_stored);
+            return;
+        }
+        flow->packets = new_packets;
+        flow->packet_capacity = new_capacity;
     }
     
     // Allocate and copy packet structure
     parsed_packet_t *pkt_copy = (parsed_packet_t *)malloc(sizeof(parsed_packet_t));
+    if (!pkt_copy) {
+        fprintf(stderr, "[Error] Failed to allocate packet copy\n");
+        return;
+    }
     memcpy(pkt_copy, parsed, sizeof(parsed_packet_t));
     
     // IMPORTANT: Copy raw packet data (not just the pointer!)

@@ -33,11 +33,18 @@ const char* perf_get_attack_type_name(int attack_type) {
     }
 }
 
+/* ========== Forward Declarations ========== */
+double perf_get_cpu_usage(void);
+
 /* ========== Initialization Functions ========== */
 
 void perf_metrics_init(system_performance_t *metrics) {
     memset(metrics, 0, sizeof(system_performance_t));
     gettimeofday(&metrics->system_start_time, NULL);
+    // Initialize CPU usage tracking baseline at program start
+    // This ensures the static wall clock reference in perf_get_cpu_usage()
+    // is set early, producing accurate CPU% values later.
+    perf_get_cpu_usage();
 }
 
 void perf_dpi_init(dpi_performance_t *metrics) {
@@ -85,7 +92,8 @@ double perf_get_cpu_usage(void) {
     double sys_time = usage.ru_stime.tv_sec + usage.ru_stime.tv_usec / 1000000.0;
     double cpu_time = user_time + sys_time;
     
-    // Get wall clock time
+    // Get wall clock time since the static baseline was initialized
+    // perf_metrics_init() calls this function early to set the baseline
     static struct timeval start_time = {0, 0};
     static int first_call = 1;
     
@@ -100,8 +108,12 @@ double perf_get_cpu_usage(void) {
     double wall_time = (current_time.tv_sec - start_time.tv_sec) + 
                       (current_time.tv_usec - start_time.tv_usec) / 1000000.0;
     
-    if (wall_time > 0) {
-        return (cpu_time / wall_time) * 100.0;
+    // Require at least 10ms of wall time for a meaningful ratio
+    // Cap at 100% since this is a single-threaded application
+    if (wall_time > 0.01) {
+        double cpu_percent = (cpu_time / wall_time) * 100.0;
+        if (cpu_percent > 100.0) cpu_percent = 100.0;
+        return cpu_percent;
     }
     
     return 0.0;

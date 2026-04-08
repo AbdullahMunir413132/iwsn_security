@@ -185,7 +185,7 @@ typedef struct {
     double system_recall;
     
     // PCAP File Information
-    char pcap_filename[256];
+    char pcap_filename[512];
     uint64_t pcap_file_size_bytes;
     double pcap_duration_seconds;
     
