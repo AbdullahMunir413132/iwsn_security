@@ -69,7 +69,111 @@ int extract_sensor_data(mqtt_message_t *msg) {
         return 0;
     }
     
-    // Try to parse common sensor data formats
+    /* ═══════ Real Hardware JSON Formats (ESP32 IWSN Node) ═══════ */
+    
+    // Format A: Ultrasonic SR04M-2 JSON
+    // {"sensor_id":"SR04M-2","type":"ultrasonic","distance_cm":42.5,"unit":"cm","status":"valid",...}
+    if (strstr(payload_str, "\"type\"") && strstr(payload_str, "\"ultrasonic\"")) {
+        double dist_val;
+        char *dist_ptr = strstr(payload_str, "\"distance_cm\"");
+        if (dist_ptr) {
+            // Skip to the numeric value after "distance_cm":
+            dist_ptr = strchr(dist_ptr, ':');
+            if (dist_ptr && sscanf(dist_ptr + 1, "%lf", &dist_val) == 1) {
+                strcpy(msg->sensor_type, "ultrasonic_distance");
+                msg->sensor_value = dist_val;
+                strcpy(msg->sensor_unit, "cm");
+                msg->has_sensor_data = 1;
+                return 1;
+            }
+        }
+    }
+    
+    // Format B: IR Obstacle Avoidance JSON
+    // {"sensor_id":"IR_OA_01","type":"ir_obstacle","obstacle_detected":true,"raw_value":0,...}
+    if (strstr(payload_str, "\"type\"") && strstr(payload_str, "\"ir_obstacle\"")) {
+        char *det_ptr = strstr(payload_str, "\"obstacle_detected\"");
+        if (det_ptr) {
+            det_ptr = strchr(det_ptr, ':');
+            if (det_ptr) {
+                int is_detected = (strstr(det_ptr, "true") != NULL && 
+                                   (strstr(det_ptr, "true") - det_ptr) < 10);
+                strcpy(msg->sensor_type, "ir_obstacle");
+                msg->sensor_value = is_detected ? 1.0 : 0.0;
+                strcpy(msg->sensor_unit, "bool");
+                msg->has_sensor_data = 1;
+                return 1;
+            }
+        }
+    }
+    
+    // Format C: Heartbeat / Status JSON
+    // {"node_id":"...","type":"heartbeat","uptime_seconds":120,"wifi_rssi":-55,...}
+    if (strstr(payload_str, "\"type\"") && strstr(payload_str, "\"heartbeat\"")) {
+        double uptime_val = 0;
+        char *up_ptr = strstr(payload_str, "\"uptime_seconds\"");
+        if (up_ptr) {
+            up_ptr = strchr(up_ptr, ':');
+            if (up_ptr && sscanf(up_ptr + 1, "%lf", &uptime_val) == 1) {
+                strcpy(msg->sensor_type, "node_heartbeat");
+                msg->sensor_value = uptime_val;
+                strcpy(msg->sensor_unit, "s");
+                msg->has_sensor_data = 1;
+                return 1;
+            }
+        }
+    }
+    
+    // Format D: Combined reading JSON
+    // {"node_id":"...","ultrasonic":{"distance_cm":42.5,...},"ir_obstacle":{"detected":true,...},...}
+    if (strstr(payload_str, "\"ultrasonic\"") && strstr(payload_str, "\"ir_obstacle\"")) {
+        double dist_val;
+        char *dist_ptr = strstr(payload_str, "\"distance_cm\"");
+        if (dist_ptr) {
+            dist_ptr = strchr(dist_ptr, ':');
+            if (dist_ptr && sscanf(dist_ptr + 1, "%lf", &dist_val) == 1) {
+                strcpy(msg->sensor_type, "combined_sensor");
+                msg->sensor_value = dist_val;
+                strcpy(msg->sensor_unit, "cm");
+                msg->has_sensor_data = 1;
+                return 1;
+            }
+        }
+    }
+    
+    // Format E: Generic JSON with "value" field
+    // {"value": 25.5, "unit": "C"}
+    if (strstr(payload_str, "\"value\"")) {
+        double json_val;
+        char *val_ptr = strstr(payload_str, "\"value\"");
+        if (val_ptr) {
+            val_ptr = strchr(val_ptr, ':');
+            if (val_ptr && sscanf(val_ptr + 1, "%lf", &json_val) == 1) {
+                // Try to extract unit
+                char *unit_ptr = strstr(payload_str, "\"unit\"");
+                if (unit_ptr) {
+                    unit_ptr = strchr(unit_ptr, ':');
+                    if (unit_ptr) {
+                        char *q1 = strchr(unit_ptr, '"');
+                        if (q1) {
+                            char *q2 = strchr(q1 + 1, '"');
+                            if (q2 && (q2 - q1 - 1) < 31) {
+                                strncpy(msg->sensor_unit, q1 + 1, q2 - q1 - 1);
+                                msg->sensor_unit[q2 - q1 - 1] = '\0';
+                            }
+                        }
+                    }
+                }
+                strcpy(msg->sensor_type, "sensor_reading");
+                msg->sensor_value = json_val;
+                msg->has_sensor_data = 1;
+                return 1;
+            }
+        }
+    }
+    
+    /* ═══════ Legacy Formats (simulated traffic) ═══════ */
+    
     // Format 1: "temperature:25.5"
     if (sscanf(payload_str, "%63[^:]:%lf", msg->sensor_type, &msg->sensor_value) == 2) {
         strcpy(msg->sensor_unit, "°C");
@@ -87,7 +191,7 @@ int extract_sensor_data(mqtt_message_t *msg) {
         return 1;
     }
     
-    // Format 3: JSON-like {"temp":25.5}
+    // Format 3: JSON-like {"temp":25.5} (non-standard)
     if (strstr(payload_str, "temp") || strstr(payload_str, "temperature")) {
         double value;
         if (sscanf(payload_str, "%*[^0-9-]%lf", &value) == 1) {
@@ -99,7 +203,7 @@ int extract_sensor_data(mqtt_message_t *msg) {
         }
     }
     
-    // Format 4: Just a number (assume temperature)
+    // Format 4: Just a number (assume generic sensor)
     double value;
     if (sscanf(payload_str, "%lf", &value) == 1) {
         strcpy(msg->sensor_type, "sensor_value");

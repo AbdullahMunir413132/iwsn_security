@@ -12,6 +12,8 @@ c_dpi_engine/obj/
 # Generated reports
 *_report.txt
 performance_metrics.txt
+scripts/robustness_test_output/
+c_dpi_engine/test_outputs/
 
 # IDE
 .vscode/

@@ -220,5 +220,5 @@ ls -lh ../c_dpi_engine/
 
 ---
 
-**Need more help?** See the full [README.md](README.md) for complete documentation.
+**Need more help?** See the full [.md](README.md) for complete documentation.
 

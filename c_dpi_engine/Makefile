@@ -20,6 +20,7 @@ SOURCES_IDS = $(SRC_DIR)/main_with_ids.c \
               $(SRC_DIR)/mqtt_integration.c \
               $(SRC_DIR)/rule_engine.c \
               $(SRC_DIR)/rule_engine_attacks.c \
+              $(SRC_DIR)/rule_engine_attacks_new.c \
               $(SRC_DIR)/rule_engine_report.c \
               $(SRC_DIR)/performance_metrics.c \
               $(SRC_DIR)/detailed_reports.c \
@@ -46,6 +47,7 @@ SOURCES_NEW = $(SRC_DIR)/main_new_workflow.c \
               $(SRC_DIR)/mqtt_wrapper.c \
               $(SRC_DIR)/rule_engine.c \
               $(SRC_DIR)/rule_engine_attacks.c \
+              $(SRC_DIR)/rule_engine_attacks_new.c \
               $(SRC_DIR)/rule_engine_report.c \
               $(SRC_DIR)/performance_metrics.c \
               $(SRC_DIR)/detailed_reports.c \

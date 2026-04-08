@@ -72,6 +72,11 @@ void print_attack_detection(const attack_detection_t *detection) {
         printf("  Duration:        %.2f seconds\n", detection->duration_seconds);
     }
     
+    if (detection->rfc_reference[0] != '\0') {
+        printf("\n[RFC REFERENCE]\n");
+        printf("  Standard:        %s\n", detection->rfc_reference);
+    }
+    
     printf("\n[ADDITIONAL DETAILS]\n");
     printf("  %s\n", detection->details);
     
@@ -118,14 +123,25 @@ void print_attack_summary(const rule_engine_t *engine) {
         {ATTACK_SYN_FLOOD, "SYN Flood"},
         {ATTACK_UDP_FLOOD, "UDP Flood"},
         {ATTACK_HTTP_FLOOD, "HTTP Flood"},
+        {ATTACK_ICMP_FLOOD, "ICMP Flood"},
+        {ATTACK_DNS_AMPLIFICATION, "DNS Amplification"},
+        {ATTACK_NTP_AMPLIFICATION, "NTP Amplification"},
+        {ATTACK_SMURF, "Smurf Attack"},
+        {ATTACK_FRAGGLE, "Fraggle Attack"},
         {ATTACK_PING_OF_DEATH, "Ping of Death"},
-        {ATTACK_ARP_SPOOFING, "ARP Spoofing"},
-        {ATTACK_RUDY, "RUDY (Slow POST)"},
+        {ATTACK_LAND_ATTACK, "Land Attack"},
+        {ATTACK_TEARDROP, "Teardrop Attack"},
+        {ATTACK_IP_SPOOFING, "IP Spoofing"},
         {ATTACK_TCP_SYN_SCAN, "TCP SYN Scan"},
         {ATTACK_TCP_CONNECT_SCAN, "TCP Connect Scan"},
         {ATTACK_UDP_SCAN, "UDP Scan"},
-        {ATTACK_ICMP_FLOOD, "ICMP Flood"},
-        {ATTACK_PORT_SCAN_GENERIC, "Generic Port Scan"}
+        {ATTACK_XMAS_SCAN, "Xmas Tree Scan"},
+        {ATTACK_NULL_SCAN, "NULL Scan"},
+        {ATTACK_FIN_SCAN, "FIN Scan"},
+        {ATTACK_PORT_SCAN_GENERIC, "Generic Port Scan"},
+        {ATTACK_RUDY, "RUDY (Slow POST)"},
+        {ATTACK_SLOWLORIS, "Slowloris"},
+        {ATTACK_ARP_SPOOFING, "ARP Spoofing"}
     };
     
     int attack_count = sizeof(attack_types) / sizeof(attack_types[0]);
@@ -271,15 +287,11 @@ void generate_attack_report(const rule_engine_t *engine, const char *output_file
     fprintf(fp, "\n[ATTACKS BY TYPE]\n");
     fprintf(fp, "─────────────────────────────────────────────────────────────\n");
     
-    const char *attack_names[] = {
-        "None", "SYN Flood", "UDP Flood", "HTTP Flood", "Ping of Death",
-        "ARP Spoofing", "RUDY", "TCP SYN Scan", "TCP Connect Scan", 
-        "UDP Scan", "Port Scan", "ICMP Flood"
-    };
+    /* Use attack_type_to_string for all types */
     
-    for (int i = 1; i <= ATTACK_ICMP_FLOOD; i++) {
+    for (int i = 1; i < ATTACK_TYPE_COUNT; i++) {
         if (engine->attacks_by_type[i] > 0) {
-            fprintf(fp, "%-25s : %lu\n", attack_names[i], engine->attacks_by_type[i]);
+            fprintf(fp, "%-25s : %lu (Ref: %s)\n", attack_type_to_string((attack_type_t)i), engine->attacks_by_type[i], get_rfc_reference((attack_type_t)i));
         }
     }
     
@@ -293,6 +305,7 @@ void generate_attack_report(const rule_engine_t *engine, const char *output_file
         fprintf(fp, "Type: %s\n", d->attack_name);
         fprintf(fp, "Severity: %s\n", severity_to_string(d->severity));
         fprintf(fp, "Confidence: %.2f%%\n", d->confidence_score * 100.0);
+        fprintf(fp, "RFC Reference: %s\n", d->rfc_reference[0] ? d->rfc_reference : "N/A");
         fprintf(fp, "Description: %s\n", d->description);
         
         char src_ip[32], dst_ip[32];
