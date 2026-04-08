@@ -245,6 +245,8 @@
             <div class="subtitle">📅 Generated: 2026-04-06 10:13:13</div>
             <div class="subtitle">📁 PCAP File: syn_flood.pcap</div>
 >>>>>>> b277344 (Refactor attack detection reporting and enhance attack types)
+            <div class="subtitle">📅 Generated: 2026-02-25 11:44:06</div>
+            <div class="subtitle">📁 PCAP File: malware_rudy_attack.pcap</div>
         </div>
         
         <div class="metrics-grid">
@@ -265,6 +267,7 @@
 =======
                 <div class="value">11,913<span class="unit">pps</span></div>
 >>>>>>> b277344 (Refactor attack detection reporting and enhance attack types)
+                <div class="value">84,199<span class="unit">pps</span></div>
             </div>
             
             <div class="metric-card warning">
@@ -279,6 +282,7 @@
 =======
                 <div class="value">168<span class="unit">ms</span></div>
 >>>>>>> b277344 (Refactor attack detection reporting and enhance attack types)
+                <div class="value">3830<span class="unit">ms</span></div>
             </div>
         </div>
         
@@ -315,6 +319,9 @@
         const cpuData = {"labels": ["T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19"], "values": [88.8, 100.0, 100.0, 100.0, 97.6, 98.5, 100.0, 90.2, 100.0, 97.2, 95.3, 90.9, 100.0, 90.8, 100.0, 100.0, 100.0, 100.0, 100.0, 97.6]};
         const throughputData = {"labels": ["T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19"], "values": [10599, 11466, 11186, 10737, 11627, 13564, 12389, 13266, 12800, 11931, 12418, 13521, 11788, 13653, 12148, 12715, 10607, 12562, 12810, 10621]};
 >>>>>>> b277344 (Refactor attack detection reporting and enhance attack types)
+        const attackData = {"labels": ["HTTP Flood", "TCP Connect", "RUDY Attack"], "values": [25, 1, 4]};
+        const cpuData = {"labels": ["T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19"], "values": [82.3, 80.9, 100.0, 87.3, 88.3, 100.0, 95.5, 81.4, 92.8, 92.3, 100.0, 96.2, 100.0, 100.0, 81.0, 84.2, 83.3, 100.0, 100.0, 80.7]};
+        const throughputData = {"labels": ["T0", "T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9", "T10", "T11", "T12", "T13", "T14", "T15", "T16", "T17", "T18", "T19"], "values": [87815, 80802, 71628, 96403, 88591, 82897, 86027, 72202, 83122, 90610, 83514, 75788, 86170, 78909, 73307, 71959, 76188, 83123, 94792, 91298]};
         
         // Attack Distribution Chart
         new Chart(document.getElementById('attackChart'), {
