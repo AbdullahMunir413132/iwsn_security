@@ -150,6 +150,8 @@ void update_flow_stats(flow_stats_t *flow, const parsed_packet_t *parsed) {
         if (parsed->layer4.tcp_flags & 0x10) flow->ack_count++;  // ACK
         if (parsed->layer4.tcp_flags & 0x01) flow->fin_count++;  // FIN
         if (parsed->layer4.tcp_flags & 0x04) flow->rst_count++;  // RST
+        if (parsed->layer4.tcp_flags & 0x08) flow->psh_count++;  // PSH (Xmas scan indicator)
+        if (parsed->layer4.tcp_flags & 0x20) flow->urg_count++;  // URG (Xmas scan indicator)
     }
     
     // Track unique destination ports (for port scanning detection)
@@ -197,15 +199,25 @@ void detect_protocol(dpi_engine_t *engine, parsed_packet_t *parsed) {
         return;
     }
     
-    // Process packet with nDPI (nDPI 5.1.0 API)
+    // Process packet with nDPI
+#if NDPI_MAJOR >= 5
     flow->detected_protocol = ndpi_detection_process_packet(
         engine->ndpi,
         flow->ndpi_flow,
         parsed->raw_data + offset,
         parsed->raw_data_len - offset,
         (uint64_t)parsed->timestamp.tv_sec * 1000 + parsed->timestamp.tv_usec / 1000,
-        NULL  // input_info parameter (new in nDPI 5.x)
+        NULL  // input_info parameter (nDPI 5.x)
     );
+#else
+    flow->detected_protocol = ndpi_detection_process_packet(
+        engine->ndpi,
+        flow->ndpi_flow,
+        parsed->raw_data + offset,
+        parsed->raw_data_len - offset,
+        (uint64_t)parsed->timestamp.tv_sec * 1000 + parsed->timestamp.tv_usec / 1000
+    );
+#endif
     
     // Protocol detection enhancement - force detection after sufficient packets
     if (flow->total_packets >= 10) {

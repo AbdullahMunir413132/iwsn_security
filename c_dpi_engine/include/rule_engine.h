@@ -258,6 +258,9 @@ void rule_engine_analyze_flow(rule_engine_t *engine, const flow_stats_t *flow);
 /* Batch analysis (analyze all flows at once) */
 void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dpi_engine);
 
+/* ARP batch pre-processing (second pass over PCAP to extract ARP sender mappings) */
+void rule_engine_process_arp_pcap(rule_engine_t *engine, const char *pcap_file);
+
 /* ========== Individual Attack Detection Functions ========== */
 
 /* Volumetric / Flooding */

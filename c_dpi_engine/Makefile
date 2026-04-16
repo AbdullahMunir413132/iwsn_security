@@ -1,9 +1,15 @@
-# Makefile for IWSN Security DPI Engine + Intrusion Detection System
+# ============================================================================
+# IWSN Security - Unified DPI + IDS + MQTT Analyzer
+# Single-binary build: iwsn_analyzer
+# Pipeline: DPI Engine → Rule Engine (IDS) → MQTT Parser
 # Requires: nDPI library, libpcap
+# ============================================================================
 
-CC = gcc
-CFLAGS = -Wall -Wextra -O2 -g -I./include -I/usr/local/include -I/usr/include -I/usr/include/ndpi
-LDFLAGS = -L/usr/local/lib -L/usr/lib -L/usr/lib/x86_64-linux-gnu -lndpi -lpcap -lm
+CC      = gcc
+CFLAGS  = -Wall -Wextra -O2 -g \
+          -I./include -I/usr/local/include -I/usr/include -I/usr/include/ndpi
+LDFLAGS = -L/usr/local/lib -L/usr/lib -L/usr/lib/x86_64-linux-gnu \
+          -lndpi -lpcap -lm
 
 # Directories
 SRC_DIR = src
@@ -11,90 +17,45 @@ INC_DIR = include
 OBJ_DIR = obj
 BIN_DIR = bin
 
-# Source files for DPI + IDS
-SOURCES_IDS = $(SRC_DIR)/main_with_ids.c \
-              $(SRC_DIR)/dpi_engine.c \
-              $(SRC_DIR)/dpi_engine_flow.c \
-              $(SRC_DIR)/pcap_utils.c \
-              $(SRC_DIR)/mqtt_parser.c \
-              $(SRC_DIR)/mqtt_integration.c \
-              $(SRC_DIR)/rule_engine.c \
-              $(SRC_DIR)/rule_engine_attacks.c \
-              $(SRC_DIR)/rule_engine_attacks_new.c \
-              $(SRC_DIR)/rule_engine_report.c \
-              $(SRC_DIR)/performance_metrics.c \
-              $(SRC_DIR)/detailed_reports.c \
-              $(SRC_DIR)/ids_reports.c \
-              $(SRC_DIR)/live_capture.c
+# ---------------------------------------------------------------------------
+# Single unified binary — consolidates DPI + IDS + MQTT analysis
+# Entry point: main_new_workflow.c
+# ---------------------------------------------------------------------------
+SOURCES = $(SRC_DIR)/main_new_workflow.c \
+          $(SRC_DIR)/dpi_engine.c \
+          $(SRC_DIR)/dpi_engine_flow.c \
+          $(SRC_DIR)/pcap_utils.c \
+          $(SRC_DIR)/mqtt_parser.c \
+          $(SRC_DIR)/mqtt_wrapper.c \
+          $(SRC_DIR)/rule_engine.c \
+          $(SRC_DIR)/rule_engine_attacks.c \
+          $(SRC_DIR)/rule_engine_attacks_new.c \
+          $(SRC_DIR)/rule_engine_report.c \
+          $(SRC_DIR)/performance_metrics.c \
+          $(SRC_DIR)/detailed_reports.c \
+          $(SRC_DIR)/ids_reports.c \
+          $(SRC_DIR)/mqtt_reports.c \
+          $(SRC_DIR)/live_capture.c
 
-# Source files for original DPI only
-SOURCES_DPI = $(SRC_DIR)/main.c \
-              $(SRC_DIR)/dpi_engine.c \
-              $(SRC_DIR)/dpi_engine_flow.c \
-              $(SRC_DIR)/mqtt_parser.c \
-              $(SRC_DIR)/mqtt_integration.c \
-              $(SRC_DIR)/pcap_utils.c \
-              $(SRC_DIR)/performance_metrics.c \
-              $(SRC_DIR)/detailed_reports.c \
-              $(SRC_DIR)/live_capture.c
+OBJECTS = $(SOURCES:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
+TARGET  = $(BIN_DIR)/iwsn_analyzer
 
-# Source files for new workflow (DPI → Rule Engine → MQTT Parser)
-SOURCES_NEW = $(SRC_DIR)/main_new_workflow.c \
-              $(SRC_DIR)/dpi_engine.c \
-              $(SRC_DIR)/dpi_engine_flow.c \
-              $(SRC_DIR)/pcap_utils.c \
-              $(SRC_DIR)/mqtt_parser.c \
-              $(SRC_DIR)/mqtt_wrapper.c \
-              $(SRC_DIR)/rule_engine.c \
-              $(SRC_DIR)/rule_engine_attacks.c \
-              $(SRC_DIR)/rule_engine_attacks_new.c \
-              $(SRC_DIR)/rule_engine_report.c \
-              $(SRC_DIR)/performance_metrics.c \
-              $(SRC_DIR)/detailed_reports.c \
-              $(SRC_DIR)/ids_reports.c \
-              $(SRC_DIR)/mqtt_reports.c \
-              $(SRC_DIR)/live_capture.c
+# ---------------------------------------------------------------------------
+# Build targets
+# ---------------------------------------------------------------------------
 
-# Object files
-OBJECTS_IDS = $(SOURCES_IDS:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
-OBJECTS_DPI = $(SOURCES_DPI:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
-OBJECTS_NEW = $(SOURCES_NEW:$(SRC_DIR)/%.c=$(OBJ_DIR)/%.o)
+# Default: build the unified analyzer
+all: directories $(TARGET)
 
-# Target binaries
-TARGET_IDS = $(BIN_DIR)/dpi_engine_ids
-TARGET_DPI = $(BIN_DIR)/dpi_engine
-TARGET_NEW = $(BIN_DIR)/dpi_mqtt_analyzer
-
-# Default target - build all including new workflow
-all: directories $(TARGET_IDS) $(TARGET_DPI) $(TARGET_NEW)
-
-# Build only IDS version
-ids: directories $(TARGET_IDS)
-
-# Build only DPI version (original)
-dpi: directories $(TARGET_DPI)
-
-# Create directories
+# Create output directories
 directories:
 	@mkdir -p $(OBJ_DIR)
 	@mkdir -p $(BIN_DIR)
 
-# Link IDS version
-$(TARGET_IDS): $(OBJECTS_IDS)
+# Link
+$(TARGET): $(OBJECTS)
 	@echo "Linking $@..."
-	$(CC) $(OBJECTS_IDS) -o $@ $(LDFLAGS)
-	@echo "✓ Build complete: $@"
-
-# Link DPI version
-$(TARGET_DPI): $(OBJECTS_DPI)
-	@echo "Linking $@..."
-	$(CC) $(OBJECTS_DPI) -o $@ $(LDFLAGS)
-	@echo "✓ Build complete: $@"
-
-# Link new workflow version
-$(TARGET_NEW): $(OBJECTS_NEW)
-	@echo "Linking $@..."
-	$(CC) $(OBJECTS_NEW) -o $@ $(LDFLAGS)
+	$(CC) $(OBJECTS) -o $@ $(LDFLAGS)
 	@echo "✓ Build complete: $@"
 
 # Compile
@@ -102,71 +63,69 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
 	@echo "Compiling $<..."
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Clean
+# ---------------------------------------------------------------------------
+# Convenience targets
+# ---------------------------------------------------------------------------
+
+# Run with a pcap file
+run: $(TARGET)
+	@echo "Usage: sudo ./$(TARGET) <pcap_file>"
+	@echo "       sudo ./$(TARGET)                (interactive/live mode)"
+
+# Quick test with a sample pcap (override PCAP= on the command line)
+PCAP ?= ../scripts/pcap_samples/mqtt_normal_traffic.pcap
+test: $(TARGET)
+	@echo "Running analysis on $(PCAP)..."
+	./$(TARGET) $(PCAP)
+
+# Run the full pipeline: simulate → analyze → export metrics
+pipeline: $(TARGET)
+	@echo "=== IWSN Full Pipeline ==="
+	@echo "[1/3] Generating attack PCAPs..."
+	cd ../scripts && python3 attack_simulator.py
+	@echo "[2/3] Running DPI + IDS + MQTT analysis..."
+	./$(TARGET) ../scripts/simulator_output/combined_attack_traffic.pcap
+	@echo "[3/3] Exporting Grafana metrics..."
+	cd ../visualization && python3 grafana_exporter.py --watch 0
+	@echo "=== Pipeline complete ==="
+
+# Clean build artifacts
 clean:
 	@echo "Cleaning..."
 	rm -rf $(OBJ_DIR) $(BIN_DIR)
 	@echo "✓ Clean complete"
 
-# Install both binaries
+# Install
 install: all
 	@echo "Installing to /usr/local/bin..."
-	sudo cp $(TARGET_IDS) /usr/local/bin/
-	sudo cp $(TARGET_DPI) /usr/local/bin/
-	@echo "✓ Installation complete"
+	sudo cp $(TARGET) /usr/local/bin/iwsn_analyzer
+	@echo "✓ Installed: /usr/local/bin/iwsn_analyzer"
 
-# Run IDS version with sample
-test-ids: $(TARGET_IDS)
-	@echo "Running IDS test with sample PCAP..."
-	$(TARGET_IDS) ../pcap_samples/sample.pcap
-
-# Run original DPI version
-test-dpi: $(TARGET_DPI)
-	@echo "Running DPI test with sample PCAP..."
-	$(TARGET_DPI) ../pcap_samples/sample.pcap
+# Uninstall
+uninstall:
+	sudo rm -f /usr/local/bin/iwsn_analyzer
 
 # Help
 help:
-	@echo "IWSN Security DPI Engine + IDS - Makefile"
 	@echo ""
-	@echo "Targets:"
-	@echo "  all          - Build both IDS and DPI versions (default)"
-	@echo "  ids          - Build only IDS version (with attack detection)"
-	@echo "  dpi          - Build only DPI version (original)"
-	@echo "  clean        - Remove build artifacts"
-	@echo "  install      - Install binaries to /usr/local/bin"
-	@echo "  test-ids     - Run IDS version with sample PCAP"
-	@echo "  test-dpi     - Run DPI version with sample PCAP"
-	@echo "  help         - Show this help message"
+	@echo "  IWSN Security — Unified Analyzer"
+	@echo "  ─────────────────────────────────"
 	@echo ""
-	@echo "Binaries:"
-	@echo "  $(TARGET_IDS) - DPI + Intrusion Detection System"
-	@echo "  $(TARGET_DPI) - DPI only (original)"
-	@echo "  $(TARGET_NEW) - DPI + Rule Engine + MQTT Analyzer"
+	@echo "  Targets:"
+	@echo "    all       Build iwsn_analyzer (default)"
+	@echo "    test      Run with sample PCAP (override: make test PCAP=file.pcap)"
+	@echo "    pipeline  Simulate → Analyze → Export (full pipeline)"
+	@echo "    clean     Remove build artifacts"
+	@echo "    install   Install to /usr/local/bin"
+	@echo "    uninstall Remove from /usr/local/bin"
+	@echo "    help      Show this message"
 	@echo ""
-	@echo "Capture Modes:"
-	@echo "  All binaries support two capture modes:"
-	@echo "  1) PCAP File Analysis (offline) - pass a .pcap file as argument"
-	@echo "  2) Real-Time Live Capture        - run without arguments for menu"
+	@echo "  Usage:"
+	@echo "    make                                  # Build"
+	@echo "    ./bin/iwsn_analyzer capture.pcap      # Offline PCAP analysis"
+	@echo "    sudo ./bin/iwsn_analyzer              # Interactive / live capture"
+	@echo "    make test PCAP=my_traffic.pcap        # Quick test"
+	@echo "    make pipeline                         # Full pipeline run"
 	@echo ""
-	@echo "Requirements:"
-	@echo "  - nDPI library installed (/usr/local/lib/libndpi.so)"
-	@echo "  - libpcap-dev package"
-	@echo ""
-	@echo "Usage Examples:"
-	@echo "  make                              # Build both versions"
-	@echo "  make ids                          # Build IDS version only"
-	@echo "  ./bin/dpi_engine_ids capture.pcap # Run with attack detection"
-	@echo "  ./bin/dpi_engine capture.pcap     # Run without attack detection"
-	@echo "  - sudo/root for live capture mode"
-	@echo ""
-	@echo "Usage Examples:"
-	@echo "  make                                    # Build all versions"
-	@echo "  make ids                                # Build IDS version only"
-	@echo "  ./bin/dpi_engine_ids capture.pcap       # PCAP mode (offline)"
-	@echo "  ./bin/dpi_engine capture.pcap           # PCAP mode (offline)"
-	@echo "  sudo ./bin/dpi_engine_ids               # Live mode (interactive)"
-	@echo "  sudo ./bin/dpi_engine                   # Live mode (interactive)"
-	@echo "  sudo ./bin/dpi_mqtt_analyzer            # Live mode (interactive)"
 
-.PHONY: all ids dpi clean install test-ids test-dpi help directories
+.PHONY: all clean install uninstall test run pipeline help directories

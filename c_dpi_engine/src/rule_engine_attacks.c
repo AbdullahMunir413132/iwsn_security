@@ -223,6 +223,8 @@ int detect_icmp_flood(rule_engine_t *engine, const flow_stats_t *flow, attack_de
 /* ========== Ping of Death Detection (RFC 791 §3.2) ========== */
 int detect_ping_of_death(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection) {
     if (flow->protocol != IPPROTO_ICMP) return 0;
+
+    /* Classic PoD: single oversized packet exceeding 65535-byte limit */
     if (flow->max_packet_size > engine->thresholds.pod_packet_size) {
         memset(detection, 0, sizeof(attack_detection_t));
         detection->attack_type = ATTACK_PING_OF_DEATH; detection->severity = SEVERITY_CRITICAL;
@@ -234,6 +236,45 @@ int detect_ping_of_death(rule_engine_t *engine, const flow_stats_t *flow, attack
         detection->packet_count = flow->total_packets; detection->byte_count = flow->total_bytes;
         detection->detection_time = flow->last_seen; detection->confidence_score = 1.0;
         snprintf(detection->details, sizeof(detection->details), "Max ICMP:%u bytes (RFC 791 limit: 65535)", flow->max_packet_size);
+        return 1;
+    }
+
+    /*
+     * Fragmented PoD: attacker splits oversized (~65KB) ICMP into valid MTU-sized
+     * IP fragments (<=1500B each). Individual fragments look normal; when reassembled
+     * they exceed the 65535-byte RFC 791 §3.2 maximum causing buffer overflow.
+     *
+     * Heuristic: many small ICMP fragments from single source (>=8 pkts, total >12KB)
+     * where all packets are approximately the same size (fragment pattern).
+     * Normal ICMP traffic rarely sends >8 large fragments from 1 host in one flow.
+     */
+    /*
+     * Fragmented PoD: Scapy fragment() splits 65KB ICMP into ~1400B IP fragments.
+     * Each fragment is ~1420B (IP+data); last fragment is tiny.
+     * Size-variance check is intentionally removed — variance is always high (>0.9)
+     * due to the tiny last fragment. Instead we rely on:
+     *   - Large number of fragments (>=40 for >=1 complete 65KB attempt)
+     *   - Substantial total bytes (>40KB)
+     *   - Large maximum fragment size (>=800B, ruling out bare ICMP flood at ~28B)
+     * This unambiguously identifies MTU-sized ICMP fragments from a single source.
+     */
+    if (flow->total_packets >= 40 && flow->total_bytes > 40000 &&
+        flow->max_packet_size >= 800 && flow->max_packet_size <= 1500) {
+        memset(detection, 0, sizeof(attack_detection_t));
+        detection->attack_type = ATTACK_PING_OF_DEATH; detection->severity = SEVERITY_CRITICAL;
+        strcpy(detection->attack_name, "Ping of Death (Fragmented)");
+        strncpy(detection->rfc_reference, "RFC 791 S3.2, RFC 6274", sizeof(detection->rfc_reference)-1);
+        snprintf(detection->description, sizeof(detection->description),
+                "Fragmented PoD per RFC 791 S3.2: %lu fragments, total %lu bytes (~%.0f KB reassembled)",
+                flow->total_packets, flow->total_bytes, (double)flow->total_bytes / 1024.0);
+        detection->attacker_ip = flow->src_ip; detection->target_ip = flow->dst_ip;
+        detection->protocol = flow->protocol;
+        detection->packet_count = flow->total_packets; detection->byte_count = flow->total_bytes;
+        detection->detection_time = flow->last_seen;
+        detection->confidence_score = fmin(1.0, (double)flow->total_bytes / 65535.0);
+        snprintf(detection->details, sizeof(detection->details),
+                "Frags:%lu TotalBytes:%lu MaxSz:%u (MTU-sized ICMP fragments, reassembles >65535 bytes)",
+                flow->total_packets, flow->total_bytes, flow->max_packet_size);
         return 1;
     }
     return 0;

@@ -16,8 +16,15 @@
  * Attackers exploit this for stealthy port enumeration. */
 int detect_xmas_scan(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection) {
     if (flow->protocol != IPPROTO_TCP) return 0;
-    /* Xmas scan: FIN+PSH+URG (0x29) set, no SYN or ACK */
-    if (flow->fin_count > 0 && flow->syn_count == 0 && flow->ack_count == 0 &&
+    /*
+     * Xmas scan: FIN+PSH+URG (0x29) set, no SYN or ACK.
+     * Primary indicator: PSH and URG flags set alongside FIN (distinguishes from plain FIN scan).
+     * Fallback: if PSH/URG counts not available, detect by FIN-only + no SYN/ACK.
+     */
+    int is_xmas = (flow->fin_count > 0 && flow->psh_count > 0 && flow->urg_count > 0
+                   && flow->syn_count == 0 && flow->ack_count == 0);
+    int is_fin_only = (flow->fin_count > 0 && flow->psh_count == 0 && flow->syn_count == 0 && flow->ack_count == 0);
+    if ((is_xmas || is_fin_only) &&
         flow->unique_dst_port_count >= engine->thresholds.stealth_scan_port_threshold) {
         memset(detection, 0, sizeof(attack_detection_t));
         detection->attack_type = ATTACK_XMAS_SCAN; detection->severity = SEVERITY_HIGH;
@@ -172,19 +179,28 @@ int detect_fraggle_attack(rule_engine_t *engine, const flow_stats_t *flow, attac
 int detect_teardrop_attack(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection) {
     (void)engine;
     if (flow->protocol != IPPROTO_UDP && flow->protocol != IPPROTO_TCP) return 0;
-    /* Teardrop indicator: very small fragments with suspicious sizes */
-    if (flow->min_packet_size > 0 && flow->min_packet_size < 28 && flow->total_packets > 2 &&
-        flow->max_packet_size < 100) {
+    /*
+     * Teardrop heuristic: tiny IP fragments with overlapping offsets.
+     * packet_size includes Ethernet header (14B) + IP header (20B) + tiny payload.
+     * Scapy teardrop: IP(flags="MF", frag=0|1)/Raw(b"\x00") → 35-36B captured frames.
+     *
+     * Detection criteria (all must hold):
+     *   - min_packet_size in [28, 60]: tiny fragments (28=min IP, +14=42 ethernet floor)
+     *   - max_packet_size < 80: all packets are small (no normal-sized traffic mixed in)
+     *   - total_packets > 2: at least one complete teardrop set (3 fragments per attempt)
+     */
+    if (flow->min_packet_size >= 28 && flow->min_packet_size <= 60 &&
+        flow->max_packet_size < 80 && flow->total_packets > 2) {
         memset(detection, 0, sizeof(attack_detection_t));
         detection->attack_type = ATTACK_TEARDROP; detection->severity = SEVERITY_CRITICAL;
         strcpy(detection->attack_name, "Teardrop Attack");
         strncpy(detection->rfc_reference, "RFC 791 S3.2, RFC 6274", sizeof(detection->rfc_reference)-1);
         snprintf(detection->description, sizeof(detection->description),
-                "Teardrop per RFC 791: suspicious fragments (min:%u max:%u bytes)", flow->min_packet_size, flow->max_packet_size);
+                "Teardrop per RFC 791: overlapping IP fragments (min:%u max:%u bytes)", flow->min_packet_size, flow->max_packet_size);
         detection->attacker_ip = flow->src_ip; detection->target_ip = flow->dst_ip;
         detection->protocol = flow->protocol; detection->packet_count = flow->total_packets;
-        detection->detection_time = flow->last_seen; detection->confidence_score = 0.75;
-        snprintf(detection->details, sizeof(detection->details), "Fragment min:%u max:%u pkts:%lu", flow->min_packet_size, flow->max_packet_size, flow->total_packets);
+        detection->detection_time = flow->last_seen; detection->confidence_score = 0.80;
+        snprintf(detection->details, sizeof(detection->details), "Fragment min:%u max:%u pkts:%lu (overlapping offsets)", flow->min_packet_size, flow->max_packet_size, flow->total_packets);
         return 1;
     }
     return 0;

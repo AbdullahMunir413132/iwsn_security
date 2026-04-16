@@ -1,0 +1,37 @@
+{
+  "timestamp": "2026-04-12T19:18:40.453421",
+  "ids": {
+    "total_attacks": 0,
+    "blocked_ips": 0,
+    "attacks": []
+  },
+  "performance": {
+    "total_packets": 3382
+  },
+  "mqtt": {
+    "flows": 11,
+    "messages": 15,
+    "topics": [
+      "iwsn/sensors/ir_2/obstacle",
+      "iwsn/sensors/ir/obstacle",
+      "iwsn/sensors/sonar_2/distance",
+      "iwsn/sensors/ultrasonic/distance"
+    ]
+  },
+  "dpi": {
+    "protocols": {
+      "17": 334,
+      "mDNS": 65,
+      "UDP": 268,
+      "6": 888,
+      "TLS": 965,
+      "TCP": 839,
+      "MQTT": 58,
+      "Unknown.Unknown": 37,
+      "2": 17,
+      "DNS": 112,
+      "1": 4,
+      "ICMP": 2
+    }
+  }
+}

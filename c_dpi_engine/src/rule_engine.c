@@ -15,6 +15,7 @@
 #include <string.h>
 #include <math.h>
 #include <arpa/inet.h>
+#include <pcap.h>
 #include "rule_engine.h"
 
 /* ========== Engine Initialization ========== */
@@ -29,8 +30,8 @@ rule_engine_t* rule_engine_init(void) {
     /* Set default thresholds */
     rule_engine_set_default_thresholds(engine);
     
-    /* Allocate IP statistics table */
-    engine->max_ips = 10000;
+    /* Allocate IP statistics table — sized for micro-IWSN (2-4 nodes + gateway) */
+    engine->max_ips = 64;
     engine->ip_stats = calloc(engine->max_ips, sizeof(ip_statistics_t));
     if (!engine->ip_stats) {
         fprintf(stderr, "[Rule Engine] Failed to allocate IP statistics table\n");
@@ -40,7 +41,7 @@ rule_engine_t* rule_engine_init(void) {
     engine->ip_stats_count = 0;
     
     /* Allocate detections array */
-    engine->max_detections = 1000;
+    engine->max_detections = 128;
     engine->detections = calloc(engine->max_detections, sizeof(attack_detection_t));
     if (!engine->detections) {
         fprintf(stderr, "[Rule Engine] Failed to allocate detections array\n");
@@ -51,7 +52,7 @@ rule_engine_t* rule_engine_init(void) {
     engine->detection_count = 0;
     
     /* Allocate IP blocklist */
-    engine->max_blocked_ips = 10000;
+    engine->max_blocked_ips = 64;
     engine->blocked_ips = calloc(engine->max_blocked_ips, sizeof(uint32_t));
     if (!engine->blocked_ips) {
         fprintf(stderr, "[Rule Engine] Failed to allocate IP blocklist\n");
@@ -103,27 +104,35 @@ void rule_engine_destroy(rule_engine_t *engine) {
 void rule_engine_set_default_thresholds(rule_engine_t *engine) {
     detection_thresholds_t *t = &engine->thresholds;
     
+    /*
+     * ── IWSN Micro-Network Thresholds (2-4 sensor nodes) ──
+     *
+     * Normal traffic profile: ~1-2 MQTT PUBLISH/sec per sensor, heartbeat
+     * every 10s, occasional DNS/ARP. Total baseline ≈ 5-10 pkt/sec.
+     * Thresholds set to 3-5x baseline to eliminate false positives
+     * while still catching even low-and-slow attacks.
+     */
+    
     /* SYN Flood Detection (RFC 4987)
-     * RFC 4987 §3: SYN floods exploit half-open connection state.
-     * Threshold: 100 SYN/sec is well above normal web traffic baselines. */
-    t->syn_flood_threshold = 100;
+     * Normal: 0-1 SYN/sec (MQTT reconnects). Threshold at 15/sec. */
+    t->syn_flood_threshold = 15;
     t->syn_flood_ratio = 3.0;              /* SYN:ACK ratio > 3:1 indicates incomplete handshakes */
     t->syn_flood_time_window = 10;
     
     /* UDP Flood Detection (RFC 4732 §2.1 - Volumetric)
-     * UDP floods target bandwidth exhaustion per RFC 4732. */
-    t->udp_flood_threshold = 200;
+     * Normal: 0-2 UDP/sec (DNS, NTP). Threshold at 30/sec. */
+    t->udp_flood_threshold = 30;
     t->udp_flood_time_window = 10;
-    t->udp_flood_packet_count = 1000;
+    t->udp_flood_packet_count = 100;
     
-    /* HTTP Flood Detection (RFC 9110 §6 - HTTP Semantics)
-     * Application-layer flood targeting HTTP request processing. */
-    t->http_flood_threshold = 50;
+    /* HTTP Flood Detection (RFC 9110)
+     * IWSN nodes don't serve HTTP; any burst is suspicious. */
+    t->http_flood_threshold = 10;
     t->http_flood_time_window = 10;
     
-    /* ICMP Flood Detection (RFC 792 - ICMP, RFC 4732)
-     * Volumetric ICMP echo request flood. */
-    t->icmp_flood_threshold = 100;
+    /* ICMP Flood Detection (RFC 792, RFC 4732)
+     * Normal: 0-1 ping/sec. Threshold at 20/sec. */
+    t->icmp_flood_threshold = 20;
     t->icmp_flood_time_window = 10;
     
     /* Ping of Death Detection (RFC 791 §3.2)
@@ -137,49 +146,47 @@ void rule_engine_set_default_thresholds(rule_engine_t *engine) {
     t->arp_spoofing_mac_changes = 3;
     t->arp_spoofing_time_window = 60;
     
-    /* RUDY / Slow POST Detection (RFC 9110 §6.3)
-     * Slow body transmission keeps server resources occupied. */
+    /* RUDY / Slow POST Detection (RFC 9110)
+     * Any slow POST is suspicious on an IWSN. Lowered min packets. */
     t->rudy_avg_body_rate = 10.0;
-    t->rudy_min_packets = 10;
+    t->rudy_min_packets = 5;
     t->rudy_time_window = 30;
     
-    /* Slowloris Detection (RFC 9110 §6.2)
-     * Slow HTTP header transmission keeps connections open indefinitely. */
-    t->slowloris_header_rate = 5.0;         /* < 5 bytes/sec header rate */
-    t->slowloris_min_duration = 30;         /* Connection open > 30 seconds */
-    t->slowloris_min_connections = 5;       /* At least 5 slow connections */
+    /* Slowloris Detection (RFC 9110)
+     * Even 2 simultaneous slow connections are abnormal on IWSN. */
+    t->slowloris_header_rate = 5.0;
+    t->slowloris_min_duration = 20;
+    t->slowloris_min_connections = 2;
     
-    /* Port Scan Detection (General)
-     * Per NIST SP 800-94: scanning detected by unique port access patterns. */
-    t->port_scan_unique_ports = 20;
-    t->port_scan_time_window = 60;
-    t->port_scan_connection_ratio = 0.7;
+    /* Port Scan Detection
+     * IWSN nodes expose 1-2 ports (MQTT 1883). 5+ unique ports is a scan. */
+    t->port_scan_unique_ports = 5;
+    t->port_scan_time_window = 30;
+    t->port_scan_connection_ratio = 0.6;
     
     /* TCP Connect Scan Detection */
-    t->tcp_connect_scan_ports = 15;
-    t->tcp_connect_scan_completion = 0.8;
+    t->tcp_connect_scan_ports = 5;
+    t->tcp_connect_scan_completion = 0.7;
     
     /* Xmas/NULL/FIN Scan Detection (RFC 793 §3.9)
-     * RFC 793 defines specific responses to invalid flag combinations. */
-    t->stealth_scan_port_threshold = 5;
+     * Any stealth scan packets to 3+ ports is suspicious on IWSN. */
+    t->stealth_scan_port_threshold = 3;
     
-    /* Smurf Attack Detection (RFC 2827 / BCP 38)
-     * ICMP echo requests to broadcast with spoofed source. */
-    t->smurf_icmp_threshold = 50;
+    /* Smurf Attack Detection (BCP 38)
+     * 10 ICMP echo-to-broadcast/sec is far above IWSN baseline. */
+    t->smurf_icmp_threshold = 10;
     
-    /* Fraggle Attack Detection (RFC 6274)
-     * UDP echo/chargen to broadcast address. */
-    t->fraggle_udp_threshold = 50;
+    /* Fraggle Attack Detection (RFC 6274) */
+    t->fraggle_udp_threshold = 10;
     
     /* DNS Amplification Detection (RFC 5358)
-     * RFC 5358: Large DNS responses from recursive resolvers. */
-    t->dns_amp_response_size = 512;         /* DNS responses > 512 bytes (RFC 1035 limit) */
-    t->dns_amp_rate_threshold = 50;
+     * IWSN DNS is rare; 10 large responses/sec is clearly an attack. */
+    t->dns_amp_response_size = 512;
+    t->dns_amp_rate_threshold = 10;
     
-    /* NTP Amplification Detection (RFC 5905, CVE-2013-5211)
-     * Large NTP responses from monlist command. */
-    t->ntp_amp_response_size = 468;         /* NTP monlist response size */
-    t->ntp_amp_rate_threshold = 50;
+    /* NTP Amplification Detection (RFC 5905, CVE-2013-5211) */
+    t->ntp_amp_response_size = 468;
+    t->ntp_amp_rate_threshold = 10;
     
     printf("[Rule Engine] RFC-aligned default thresholds loaded\n");
 }
@@ -650,6 +657,7 @@ void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dp
         typedef struct { uint32_t src_ip; uint32_t dst_ip; uint32_t flow_count;
             uint16_t ports[512]; uint32_t port_count; uint8_t protocol;
             uint32_t syn_count; uint32_t fin_count; uint32_t ack_count; uint32_t rst_count;
+            uint32_t psh_count; uint32_t urg_count; /* for Xmas scan distinction */
             uint32_t has_flags_zero; } scan_agg_t;
         scan_agg_t scans[1000];
         uint32_t scan_count = 0;
@@ -657,24 +665,30 @@ void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dp
         for (uint32_t i = 0; i < dpi_engine->flow_count; i++) {
             const flow_stats_t *fl = &dpi_engine->flows[i];
             
-            /* Flood aggregation — group by destination */
+            /* Flood aggregation — protocol-aware grouping key:
+             *   TCP:  group by (dst_ip, proto, dst_port) — keeps HTTP:80 separate from SYN:1883
+             *   UDP:  group by (dst_ip, proto, amp_src_port) — keeps DNS:53 separate from NTP:123
+             *   ICMP: group by (dst_ip, proto) */
+            uint16_t fl_amp_src = (fl->protocol == IPPROTO_UDP &&
+                (fl->src_port == 53 || fl->src_port == 123 || fl->src_port == 19))
+                ? fl->src_port : 0;
             int found = -1;
             for (uint32_t j = 0; j < agg_count; j++) {
-                if (agg[j].dst_ip == fl->dst_ip && agg[j].protocol == fl->protocol) {
-                    found = j; break;
-                }
+                if (agg[j].dst_ip != fl->dst_ip || agg[j].protocol != fl->protocol) continue;
+                if (fl->protocol == IPPROTO_TCP && agg[j].dst_port != fl->dst_port) continue;
+                if (fl->protocol == IPPROTO_UDP && agg[j].common_src_port != fl_amp_src) continue;
+                found = j; break;
             }
             if (found >= 0) {
                 agg[found].total_pkts += fl->total_packets;
                 agg[found].total_bytes += fl->total_bytes;
                 agg[found].flow_count++;
-                if (fl->src_port == 53 || fl->src_port == 123) agg[found].common_src_port = fl->src_port;
             } else if (agg_count < 5000) {
                 memset(&agg[agg_count], 0, sizeof(agg_t));
                 agg[agg_count].dst_ip = fl->dst_ip; agg[agg_count].total_pkts = fl->total_packets;
                 agg[agg_count].total_bytes = fl->total_bytes; agg[agg_count].flow_count = 1;
                 agg[agg_count].protocol = fl->protocol; agg[agg_count].dst_port = fl->dst_port;
-                agg[agg_count].common_src_port = fl->src_port;
+                agg[agg_count].common_src_port = fl_amp_src;
                 agg_count++;
             }
             
@@ -691,7 +705,10 @@ void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dp
                 scans[found].fin_count += fl->fin_count;
                 scans[found].ack_count += fl->ack_count;
                 scans[found].rst_count += fl->rst_count;
-                if (fl->syn_count == 0 && fl->ack_count == 0 && fl->fin_count == 0 && fl->rst_count == 0)
+                scans[found].psh_count += fl->psh_count;
+                scans[found].urg_count += fl->urg_count;
+                if (fl->syn_count == 0 && fl->ack_count == 0 && fl->fin_count == 0 && fl->rst_count == 0
+                    && fl->psh_count == 0 && fl->urg_count == 0)
                     scans[found].has_flags_zero++;
                 /* Track unique dst ports */
                 int pf = 0;
@@ -705,8 +722,10 @@ void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dp
                 scans[scan_count].protocol = fl->protocol; scans[scan_count].flow_count = 1;
                 scans[scan_count].syn_count = fl->syn_count; scans[scan_count].fin_count = fl->fin_count;
                 scans[scan_count].ack_count = fl->ack_count; scans[scan_count].rst_count = fl->rst_count;
+                scans[scan_count].psh_count = fl->psh_count; scans[scan_count].urg_count = fl->urg_count;
                 scans[scan_count].ports[0] = fl->dst_port; scans[scan_count].port_count = 1;
-                if (fl->syn_count == 0 && fl->ack_count == 0 && fl->fin_count == 0 && fl->rst_count == 0)
+                if (fl->syn_count == 0 && fl->ack_count == 0 && fl->fin_count == 0 && fl->rst_count == 0
+                    && fl->psh_count == 0 && fl->urg_count == 0)
                     scans[scan_count].has_flags_zero = 1;
                 scan_count++;
             }
@@ -761,7 +780,8 @@ void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dp
         
         /* Process scan aggregates (1 source → many unique ports) */
         for (uint32_t i = 0; i < scan_count; i++) {
-            if (scans[i].port_count < 10) continue; /* Need at least 10 unique ports */
+            /* Threshold: min unique ports to classify as scan (configured, default 5) */
+            if (scans[i].port_count < engine->thresholds.port_scan_unique_ports) continue;
             
             attack_detection_t det; memset(&det, 0, sizeof(det));
             det.attacker_ip = scans[i].src_ip; det.target_ip = scans[i].dst_ip;
@@ -771,10 +791,16 @@ void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dp
             
             if (scans[i].protocol == IPPROTO_TCP) {
                 if (scans[i].fin_count > 0 && scans[i].syn_count == 0 && scans[i].ack_count == 0) {
-                    /* FIN-only or Xmas scan */
-                    det.attack_type = ATTACK_FIN_SCAN; det.severity = SEVERITY_HIGH;
-                    strcpy(det.attack_name, "FIN Scan"); strncpy(det.rfc_reference, "RFC 793 S3.9", sizeof(det.rfc_reference)-1);
-                    snprintf(det.description, sizeof(det.description), "Aggregate FIN scan: %u unique ports", scans[i].port_count);
+                    /* Xmas scan (FIN+PSH+URG) or FIN-only scan — distinguished by PSH/URG */
+                    int is_xmas = (scans[i].psh_count > 0 || scans[i].urg_count > 0);
+                    det.attack_type = is_xmas ? ATTACK_XMAS_SCAN : ATTACK_FIN_SCAN;
+                    det.severity = SEVERITY_HIGH;
+                    strcpy(det.attack_name, is_xmas ? "Xmas Tree Scan" : "FIN Scan");
+                    strncpy(det.rfc_reference, "RFC 793 S3.9", sizeof(det.rfc_reference)-1);
+                    snprintf(det.description, sizeof(det.description),
+                        "Aggregate %s: %u unique ports (FIN:%u PSH:%u URG:%u)",
+                        is_xmas ? "Xmas scan" : "FIN scan",
+                        scans[i].port_count, scans[i].fin_count, scans[i].psh_count, scans[i].urg_count);
                     add_detection(engine, &det);
                 } else if (scans[i].has_flags_zero > scans[i].flow_count / 2) {
                     det.attack_type = ATTACK_NULL_SCAN; det.severity = SEVERITY_HIGH;
@@ -796,6 +822,33 @@ void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dp
                 det.attack_type = ATTACK_UDP_SCAN; det.severity = SEVERITY_MEDIUM;
                 strcpy(det.attack_name, "UDP Scan"); strncpy(det.rfc_reference, "RFC 768", sizeof(det.rfc_reference)-1);
                 snprintf(det.description, sizeof(det.description), "Aggregate UDP scan: %u unique ports", scans[i].port_count);
+                add_detection(engine, &det);
+            }
+        }
+
+        /* Phase 3 — ARP Spoofing: detect IPs with multiple MAC addresses in ip_stats
+         * (populated by rule_engine_process_arp_pcap() pre-pass in batch mode,
+         *  or by update_ip_statistics() per-packet in live-capture mode) */
+        for (uint32_t i = 0; i < engine->ip_stats_count; i++) {
+            ip_statistics_t *ips = &engine->ip_stats[i];
+            if (ips->mac_address_count >= engine->thresholds.arp_spoofing_mac_changes) {
+                attack_detection_t det; memset(&det, 0, sizeof(det));
+                det.attack_type = ATTACK_ARP_SPOOFING; det.severity = SEVERITY_CRITICAL;
+                strcpy(det.attack_name, "ARP Spoofing");
+                strncpy(det.rfc_reference, "RFC 826, RFC 5227", sizeof(det.rfc_reference)-1);
+                det.attacker_ip = ips->ip_address;
+                det.packet_count = ips->mac_address_count;
+                det.confidence_score = fmin(1.0, (double)ips->mac_address_count / 10.0);
+                if (dpi_engine->flow_count > 0)
+                    det.detection_time = dpi_engine->flows[0].last_seen;
+                snprintf(det.description, sizeof(det.description),
+                    "ARP Spoofing per RFC 826/5227: IP %s claims %u different MACs (threshold: %u)",
+                    inet_ntoa((struct in_addr){.s_addr = htonl(ips->ip_address)}),
+                    ips->mac_address_count, engine->thresholds.arp_spoofing_mac_changes);
+                snprintf(det.details, sizeof(det.details),
+                    "IP:%s MACcount:%u (Multiple MACs = cache poisoning / spoofed gratuitous ARP)",
+                    inet_ntoa((struct in_addr){.s_addr = htonl(ips->ip_address)}),
+                    ips->mac_address_count);
                 add_detection(engine, &det);
             }
         }
@@ -902,4 +955,65 @@ void rule_engine_analyze_flow(rule_engine_t *engine, const flow_stats_t *flow) {
                (flow->last_seen.tv_usec - flow->first_seen.tv_usec) / 1000000.0);
         printf("────────────────────────────────────────────────────────────────\n\n");
     }
+}
+
+/* ========== ARP Batch Processing (for PCAP mode ARP Spoofing detection) ========== */
+/*
+ * Performs a second pass over the PCAP file looking only for ARP packets.
+ * Extracts sender-MAC → sender-IP mappings and populates ip_stats[].mac_addresses
+ * so that detect_arp_spoofing() can find multiple MACs claiming the same IP.
+ *
+ * ARP frame layout (after Ethernet header, ethertype 0x0806):
+ *   [0-1] HW type (2B)  [2-3] Proto type (2B)  [4] HW size  [5] Proto size  [6-7] Opcode
+ *   [8-13]  Sender MAC (6B)   [14-17] Sender IP (4B)
+ *   [18-23] Target MAC (6B)   [24-27] Target IP (4B)
+ */
+void rule_engine_process_arp_pcap(rule_engine_t *engine, const char *pcap_file) {
+    if (!engine || !pcap_file) return;
+
+    char errbuf[PCAP_ERRBUF_SIZE];
+    pcap_t *handle = pcap_open_offline(pcap_file, errbuf);
+    if (!handle) return;
+
+    int datalink = pcap_datalink(handle);
+    if (datalink != DLT_EN10MB) { pcap_close(handle); return; }
+
+    const uint8_t *packet;
+    struct pcap_pkthdr *header;
+    uint32_t arp_entries = 0;
+
+    while (pcap_next_ex(handle, &header, &packet) > 0) {
+        if (header->caplen < 42) continue;  /* Ethernet(14) + ARP(28) minimum */
+
+        uint16_t ethertype = (packet[12] << 8) | packet[13];
+        if (ethertype != 0x0806) continue;  /* Not ARP */
+
+        const uint8_t *arp = packet + 14;
+        uint16_t hw_type    = (arp[0] << 8) | arp[1];
+        uint16_t proto_type = (arp[2] << 8) | arp[3];
+        if (hw_type != 1 || proto_type != 0x0800) continue; /* Ethernet/IPv4 ARP only */
+
+        const uint8_t *sender_mac = arp + 8;
+        uint32_t sender_ip_net;
+        memcpy(&sender_ip_net, arp + 14, 4);
+        uint32_t sender_ip = ntohl(sender_ip_net);
+
+        ip_statistics_t *stats = get_or_create_ip_stats(engine, sender_ip);
+        if (!stats) continue;
+
+        int already_known = 0;
+        for (uint32_t i = 0; i < stats->mac_address_count; i++) {
+            if (memcmp(stats->mac_addresses[i], sender_mac, 6) == 0) {
+                already_known = 1; break;
+            }
+        }
+        if (!already_known && stats->mac_address_count < 10) {
+            memcpy(stats->mac_addresses[stats->mac_address_count++], sender_mac, 6);
+            arp_entries++;
+        }
+    }
+
+    pcap_close(handle);
+    if (arp_entries > 0)
+        printf("[Rule Engine] ARP pre-scan: %u unique sender-MAC/IP mappings indexed\n", arp_entries);
 }

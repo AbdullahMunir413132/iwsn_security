@@ -1,19 +1,29 @@
 {
-  "generator": "IWSN Attack Simulator v3.0",
-  "timestamp": "2026-04-06 10:12:17",
+  "generator": "IWSN Attack Simulator v4.0",
+  "timestamp": "2026-04-12 18:00:49",
   "difficulty": "easy",
   "noise_percentage": 0,
+  "network": {
+    "sensor_ips": [
+      "10.7.88.20",
+      "10.7.88.21",
+      "10.7.88.22",
+      "10.7.88.23"
+    ],
+    "broker_ip": "10.7.88.12",
+    "gateway_ip": "10.7.88.1"
+  },
   "attacks": [
     {
       "name": "syn_flood",
       "file": "./simulator_output/syn_flood.pcap",
       "attack_type": "SYN Flood",
       "rfc_reference": "RFC 4987, RFC 793",
-      "attack_packets": 2000,
-      "total_packets": 2000,
-      "mqtt_packets": 0,
+      "attack_packets": 200,
+      "total_packets": 200,
+      "mqtt_packets": 200,
       "noise_packets": 0,
-      "file_size_bytes": 140024,
+      "file_size_bytes": 14024,
       "expected_detection": true
     },
     {
@@ -21,11 +31,11 @@
       "file": "./simulator_output/udp_flood.pcap",
       "attack_type": "UDP Flood",
       "rfc_reference": "RFC 768, RFC 4732",
-      "attack_packets": 3000,
-      "total_packets": 3000,
+      "attack_packets": 400,
+      "total_packets": 400,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 366024,
+      "file_size_bytes": 48824,
       "expected_detection": true
     },
     {
@@ -33,11 +43,11 @@
       "file": "./simulator_output/icmp_flood.pcap",
       "attack_type": "ICMP Flood",
       "rfc_reference": "RFC 792, RFC 4732",
-      "attack_packets": 2000,
-      "total_packets": 2000,
+      "attack_packets": 250,
+      "total_packets": 250,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 116024,
+      "file_size_bytes": 14524,
       "expected_detection": true
     },
     {
@@ -45,11 +55,11 @@
       "file": "./simulator_output/http_flood.pcap",
       "attack_type": "HTTP Flood",
       "rfc_reference": "RFC 9110, RFC 4732",
-      "attack_packets": 300,
-      "total_packets": 300,
+      "attack_packets": 120,
+      "total_packets": 120,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 30624,
+      "file_size_bytes": 12264,
       "expected_detection": true
     },
     {
@@ -57,11 +67,11 @@
       "file": "./simulator_output/ping_of_death.pcap",
       "attack_type": "Ping of Death",
       "rfc_reference": "RFC 791 S3.2, RFC 6274",
-      "attack_packets": 20,
-      "total_packets": 20,
+      "attack_packets": 470,
+      "total_packets": 470,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 1301184,
+      "file_size_bytes": 673604,
       "expected_detection": true
     },
     {
@@ -71,7 +81,7 @@
       "rfc_reference": "RFC 6274, CVE-1999-0016",
       "attack_packets": 10,
       "total_packets": 10,
-      "mqtt_packets": 0,
+      "mqtt_packets": 10,
       "noise_packets": 0,
       "file_size_bytes": 724,
       "expected_detection": true
@@ -81,11 +91,11 @@
       "file": "./simulator_output/smurf_attack.pcap",
       "attack_type": "Smurf Attack",
       "rfc_reference": "RFC 2827 (BCP 38)",
-      "attack_packets": 500,
-      "total_packets": 500,
+      "attack_packets": 120,
+      "total_packets": 120,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 29024,
+      "file_size_bytes": 6984,
       "expected_detection": true
     },
     {
@@ -93,11 +103,11 @@
       "file": "./simulator_output/fraggle_attack.pcap",
       "attack_type": "Fraggle Attack",
       "rfc_reference": "RFC 768, RFC 6274",
-      "attack_packets": 500,
-      "total_packets": 500,
+      "attack_packets": 120,
+      "total_packets": 120,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 31024,
+      "file_size_bytes": 7464,
       "expected_detection": true
     },
     {
@@ -105,11 +115,11 @@
       "file": "./simulator_output/teardrop_attack.pcap",
       "attack_type": "Teardrop Attack",
       "rfc_reference": "RFC 791 S3.2, RFC 6274",
-      "attack_packets": 150,
-      "total_packets": 150,
+      "attack_packets": 75,
+      "total_packets": 75,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 7724,
+      "file_size_bytes": 3874,
       "expected_detection": true
     },
     {
@@ -117,11 +127,11 @@
       "file": "./simulator_output/tcp_syn_scan.pcap",
       "attack_type": "TCP SYN Scan",
       "rfc_reference": "RFC 793 S3.9",
-      "attack_packets": 24,
-      "total_packets": 24,
+      "attack_packets": 40,
+      "total_packets": 40,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 1704,
+      "file_size_bytes": 2824,
       "expected_detection": true
     },
     {
@@ -129,11 +139,11 @@
       "file": "./simulator_output/tcp_connect_scan.pcap",
       "attack_type": "TCP Connect Scan",
       "rfc_reference": "RFC 793",
-      "attack_packets": 48,
-      "total_packets": 48,
+      "attack_packets": 80,
+      "total_packets": 80,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 3384,
+      "file_size_bytes": 5624,
       "expected_detection": true
     },
     {
@@ -141,23 +151,23 @@
       "file": "./simulator_output/udp_scan.pcap",
       "attack_type": "UDP Scan",
       "rfc_reference": "RFC 768",
-      "attack_packets": 60,
-      "total_packets": 60,
+      "attack_packets": 30,
+      "total_packets": 30,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 3624,
+      "file_size_bytes": 1824,
       "expected_detection": true
     },
     {
       "name": "xmas_scan",
       "file": "./simulator_output/xmas_scan.pcap",
-      "attack_type": "FIN Scan",
+      "attack_type": "Xmas Tree Scan",
       "rfc_reference": "RFC 793 S3.9",
-      "attack_packets": 50,
-      "total_packets": 50,
+      "attack_packets": 25,
+      "total_packets": 25,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 3524,
+      "file_size_bytes": 1774,
       "expected_detection": true
     },
     {
@@ -165,11 +175,11 @@
       "file": "./simulator_output/null_scan.pcap",
       "attack_type": "NULL Scan",
       "rfc_reference": "RFC 793 S3.9",
-      "attack_packets": 50,
-      "total_packets": 50,
+      "attack_packets": 25,
+      "total_packets": 25,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 3524,
+      "file_size_bytes": 1774,
       "expected_detection": true
     },
     {
@@ -177,11 +187,11 @@
       "file": "./simulator_output/fin_scan.pcap",
       "attack_type": "FIN Scan",
       "rfc_reference": "RFC 793 S3.9",
-      "attack_packets": 50,
-      "total_packets": 50,
+      "attack_packets": 25,
+      "total_packets": 25,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 3524,
+      "file_size_bytes": 1774,
       "expected_detection": true
     },
     {
@@ -189,11 +199,11 @@
       "file": "./simulator_output/rudy_attack.pcap",
       "attack_type": "RUDY (Slow POST)",
       "rfc_reference": "RFC 9110, OWASP",
-      "attack_packets": 34,
-      "total_packets": 34,
+      "attack_packets": 24,
+      "total_packets": 24,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 2492,
+      "file_size_bytes": 1782,
       "expected_detection": true
     },
     {
@@ -201,11 +211,11 @@
       "file": "./simulator_output/slowloris.pcap",
       "attack_type": "Slowloris",
       "rfc_reference": "RFC 9110, OWASP",
-      "attack_packets": 120,
-      "total_packets": 120,
+      "attack_packets": 60,
+      "total_packets": 60,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 9704,
+      "file_size_bytes": 4864,
       "expected_detection": true
     },
     {
@@ -213,11 +223,11 @@
       "file": "./simulator_output/dns_amplification.pcap",
       "attack_type": "DNS Amplification",
       "rfc_reference": "RFC 5358, RFC 5625",
-      "attack_packets": 200,
-      "total_packets": 200,
+      "attack_packets": 120,
+      "total_packets": 120,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 131624,
+      "file_size_bytes": 78984,
       "expected_detection": true
     },
     {
@@ -225,11 +235,11 @@
       "file": "./simulator_output/ntp_amplification.pcap",
       "attack_type": "NTP Amplification",
       "rfc_reference": "RFC 5905, CVE-2013-5211",
-      "attack_packets": 200,
-      "total_packets": 200,
+      "attack_packets": 120,
+      "total_packets": 120,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 111624,
+      "file_size_bytes": 66984,
       "expected_detection": true
     },
     {
@@ -237,11 +247,11 @@
       "file": "./simulator_output/arp_spoofing.pcap",
       "attack_type": "ARP Spoofing",
       "rfc_reference": "RFC 826, RFC 5227",
-      "attack_packets": 30,
-      "total_packets": 30,
+      "attack_packets": 20,
+      "total_packets": 20,
       "mqtt_packets": 0,
       "noise_packets": 0,
-      "file_size_bytes": 2184,
+      "file_size_bytes": 1184,
       "expected_detection": true
     },
     {
@@ -249,11 +259,11 @@
       "file": "./simulator_output/ip_spoofing.pcap",
       "attack_type": "IP Spoofing",
       "rfc_reference": "RFC 2827 (BCP 38)",
-      "attack_packets": 50,
-      "total_packets": 50,
-      "mqtt_packets": 0,
+      "attack_packets": 30,
+      "total_packets": 30,
+      "mqtt_packets": 30,
       "noise_packets": 0,
-      "file_size_bytes": 3524,
+      "file_size_bytes": 2124,
       "expected_detection": true
     },
     {
@@ -261,11 +271,11 @@
       "file": "./simulator_output/mqtt_traffic.pcap",
       "attack_type": "MQTT Traffic",
       "rfc_reference": "MQTT v3.1.1 (OASIS)",
-      "attack_packets": 155,
-      "total_packets": 155,
-      "mqtt_packets": 155,
+      "attack_packets": 76,
+      "total_packets": 76,
+      "mqtt_packets": 76,
       "noise_packets": 0,
-      "file_size_bytes": 16949,
+      "file_size_bytes": 9977,
       "expected_detection": false
     },
     {
@@ -274,10 +284,10 @@
       "attack_type": "None",
       "rfc_reference": "N/A",
       "attack_packets": 0,
-      "total_packets": 500,
-      "mqtt_packets": 180,
-      "noise_packets": 500,
-      "file_size_bytes": 43666,
+      "total_packets": 100,
+      "mqtt_packets": 79,
+      "noise_packets": 100,
+      "file_size_bytes": 15463,
       "expected_detection": false
     }
   ]
