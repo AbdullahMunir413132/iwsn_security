@@ -1,63 +1,61 @@
 version: '3.8'
 
-# IWSN Security - Grafana Real-Time Monitoring Stack
+# IWSN Security — Grafana + Prometheus Stack for Raspberry Pi
+# Real-time visualization of DPI, IDS, MQTT metrics and sensor data
+#
 # Usage:
-#   cd visualization/grafana
-#   docker-compose up -d
-#   Open http://localhost:3000 (admin/iwsn_security)
+#   cd visualization/grafana && docker-compose up -d
+#
+# Then run the exporter after each analysis:
+#   python3 ../../visualization/grafana_exporter.py --report-dir /path/to/reports
+#
+# Access:
+#   Grafana:    http://localhost:3000 (admin / iwsn_security)
+#   Prometheus: http://localhost:9090
 
 services:
-  # InfluxDB - Time-series database for metrics storage
-  influxdb:
-    image: influxdb:2.7
-    container_name: iwsn_influxdb
-    restart: unless-stopped
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: iwsn_prometheus
     ports:
-      - "8086:8086"
-    environment:
-      - DOCKER_INFLUXDB_INIT_MODE=setup
-      - DOCKER_INFLUXDB_INIT_USERNAME=admin
-      - DOCKER_INFLUXDB_INIT_PASSWORD=iwsn_security_2026
-      - DOCKER_INFLUXDB_INIT_ORG=iwsn
-      - DOCKER_INFLUXDB_INIT_BUCKET=iwsn_metrics
-      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=iwsn-security-influxdb-token
+      - "9090:9090"
     volumes:
-      - influxdb_data:/var/lib/influxdb2
-    networks:
-      - iwsn_network
-    healthcheck:
-      test: ["CMD", "influx", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'
+    restart: unless-stopped
 
-  # Grafana - Visualization and dashboards
+  node_exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: iwsn_node_exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /tmp:/host/textfile:ro
+    command:
+      - '--collector.textfile.directory=/host/textfile'
+      - '--collector.textfile'
+    restart: unless-stopped
+
   grafana:
     image: grafana/grafana:10.4.0
     container_name: iwsn_grafana
-    restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=iwsn_security
-      - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/iwsn_realtime_dashboard.json
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/iwsn_dashboard.json
     volumes:
+      - ./provisioning:/etc/grafana/provisioning:ro
+      - ./dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
-      - ./provisioning/datasources:/etc/grafana/provisioning/datasources
-      - ./provisioning/dashboards:/etc/grafana/provisioning/dashboards
-      - ./dashboards:/var/lib/grafana/dashboards
     depends_on:
-      influxdb:
-        condition: service_healthy
-    networks:
-      - iwsn_network
+      - prometheus
+    restart: unless-stopped
 
 volumes:
-  influxdb_data:
+  prometheus_data:
   grafana_data:
-
-networks:
-  iwsn_network:
-    driver: bridge

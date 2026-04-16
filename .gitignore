@@ -9,11 +9,16 @@ c_dpi_engine/obj/
 **/*.log
 /tmp/
 
-# Generated reports
+# Generated reports (kept out of repo — regenerate via pipeline)
+reports/
 *_report.txt
 performance_metrics.txt
 scripts/robustness_test_output/
 c_dpi_engine/test_outputs/
+c_dpi_engine/*.txt
+
+# Simulator output
+scripts/simulator_output/
 
 # IDE
 .vscode/
@@ -23,7 +28,18 @@ c_dpi_engine/test_outputs/
 
 # Docker volumes
 monitoring/*-data/
+visualization/grafana/*-data/
 
 # Temporary files
 *.tmp
 .DS_Store
+
+# ESP32 credentials — NEVER commit real secrets
+hardware/esp32_node/credentials.h
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Backup files from refactoring
+*.bak

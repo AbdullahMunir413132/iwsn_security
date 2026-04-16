@@ -1,0 +1,98 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "iwsn-main",
+    "title": "IWSN Security — Real-Time Dashboard",
+    "tags": ["iwsn", "security", "mqtt", "dpi"],
+    "timezone": "browser",
+    "refresh": "10s",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Attacks Detected",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+        "targets": [{"expr": "iwsn_attacks_total", "refId": "A"}],
+        "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": 0, "color": "green"}, {"value": 1, "color": "red"}]}}}
+      },
+      {
+        "id": 2,
+        "title": "Blocked IPs",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+        "targets": [{"expr": "iwsn_blocked_ips", "refId": "A"}],
+        "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": 0, "color": "green"}, {"value": 1, "color": "orange"}]}}}
+      },
+      {
+        "id": 3,
+        "title": "MQTT Flows",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+        "targets": [{"expr": "iwsn_mqtt_flows", "refId": "A"}],
+        "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": 0, "color": "blue"}]}}}
+      },
+      {
+        "id": 4,
+        "title": "MQTT Messages",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+        "targets": [{"expr": "iwsn_mqtt_messages", "refId": "A"}],
+        "fieldConfig": {"defaults": {"thresholds": {"steps": [{"value": 0, "color": "blue"}]}}}
+      },
+      {
+        "id": 5,
+        "title": "Total Packets Analyzed",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 8, "x": 0, "y": 4},
+        "targets": [{"expr": "iwsn_total_packets", "refId": "A"}]
+      },
+      {
+        "id": 6,
+        "title": "Total Flows",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 8, "x": 8, "y": 4},
+        "targets": [{"expr": "iwsn_total_flows", "refId": "A"}]
+      },
+      {
+        "id": 7,
+        "title": "Throughput (pkt/s)",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 8, "x": 16, "y": 4},
+        "targets": [{"expr": "iwsn_throughput_pps", "refId": "A"}]
+      },
+      {
+        "id": 8,
+        "title": "Attacks by Type",
+        "type": "piechart",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+        "targets": [{"expr": "iwsn_attack_by_type", "legendFormat": "{{type}}", "refId": "A"}]
+      },
+      {
+        "id": 9,
+        "title": "IDS Accuracy Metrics",
+        "type": "gauge",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+        "targets": [
+          {"expr": "iwsn_precision", "legendFormat": "Precision", "refId": "A"},
+          {"expr": "iwsn_recall", "legendFormat": "Recall", "refId": "B"},
+          {"expr": "iwsn_f1_score", "legendFormat": "F1-Score", "refId": "C"}
+        ],
+        "fieldConfig": {"defaults": {"min": 0, "max": 1, "thresholds": {"steps": [{"value": 0, "color": "red"}, {"value": 0.7, "color": "yellow"}, {"value": 0.9, "color": "green"}]}}}
+      },
+      {
+        "id": 10,
+        "title": "Processing Time (ms)",
+        "type": "bargauge",
+        "gridPos": {"h": 6, "w": 24, "x": 0, "y": 16},
+        "targets": [
+          {"expr": "iwsn_dpi_time_ms", "legendFormat": "DPI Engine", "refId": "A"},
+          {"expr": "iwsn_ids_time_ms", "legendFormat": "IDS/Rule Engine", "refId": "B"},
+          {"expr": "iwsn_mqtt_time_ms", "legendFormat": "MQTT Parser", "refId": "C"}
+        ]
+      }
+    ],
+    "time": {"from": "now-1h", "to": "now"},
+    "version": 1
+  },
+  "overwrite": true
+}

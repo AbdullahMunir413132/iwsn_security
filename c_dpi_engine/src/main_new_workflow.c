@@ -165,6 +165,11 @@ int main(int argc, char *argv[]) {
         dpi_engine_destroy(dpi_engine);
         return 1;
     }
+
+    // ARP pre-pass: index sender-MAC/IP mappings for ARP spoofing detection in batch mode
+    if (pcap_file) {
+        rule_engine_process_arp_pcap(rule_engine, pcap_file);
+    }
     
     // Analyze ALL flows through rule engine (includes aggregate attack detection)
     rule_engine_analyze_all_flows(rule_engine, dpi_engine);

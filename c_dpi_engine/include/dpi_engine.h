@@ -123,6 +123,8 @@ typedef struct {
     uint32_t ack_count;
     uint32_t fin_count;
     uint32_t rst_count;
+    uint32_t psh_count;   /* PSH flag (0x08) — used for Xmas scan detection */
+    uint32_t urg_count;   /* URG flag (0x20) — used for Xmas scan detection */
     
     // Connection tracking
     uint32_t connection_attempts;
