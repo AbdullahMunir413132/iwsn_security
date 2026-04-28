@@ -9,7 +9,7 @@ Visualize your PCAP analysis results with interactive HTML dashboards!
 ### Run Analysis with HTML Dashboard
 
 ```bash
-cd html
+cd visualization/html
 ./run_analysis_with_html.sh ../scripts/attack_samples/syn_flood.pcap
 ```
 
@@ -109,7 +109,7 @@ cd c_dpi_engine
 ./bin/dpi_mqtt_analyzer ../scripts/attack_samples/syn_flood.pcap
 
 # 2. Generate HTML dashboard only
-cd ../html
+cd ../visualization/html
 python3 generate_html_dashboard.py ../c_dpi_engine
 ```
 
@@ -117,9 +117,9 @@ python3 generate_html_dashboard.py ../c_dpi_engine
 
 ## 📄 Generated Files
 
-After running analysis, you'll find these files in `c_dpi_engine/`:
+After running analysis, you'll find generated artifacts in these locations:
 
-- `analysis_report.html` - Interactive HTML dashboard
+- `../reports/analysis_report.html` - Interactive HTML dashboard
 - `performance_metrics.txt` - Detailed performance metrics
 - `dpi_detailed_report.txt` - DPI flows and packet details
 - `ids_detailed_report.txt` - Attack detection details
@@ -132,9 +132,9 @@ After running analysis, you'll find these files in `c_dpi_engine/`:
 ### Dashboard doesn't open automatically
 ```bash
 # Manually open the dashboard
-xdg-open ../c_dpi_engine/analysis_report.html
+xdg-open ../reports/analysis_report.html
 # Or
-firefox ../c_dpi_engine/analysis_report.html
+firefox ../reports/analysis_report.html
 ```
 
 ### Python script error

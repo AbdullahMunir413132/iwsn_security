@@ -15,9 +15,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
+#include <errno.h>
+#include <limits.h>
 #include <signal.h>
 #include <sys/time.h>
+#include <pthread.h>
 #include <pcap.h>
 #include <ifaddrs.h>
 #include <net/if.h>
@@ -25,6 +29,720 @@
 #include <time.h>
 #include "live_capture.h"
 #include "dpi_engine.h"
+#include "mqtt_parser.h"
+#include "rule_engine.h"
+
+/*
+ * Weak symbol declarations for rule engine functions and globals.
+ * When live_capture.c is linked without rule_engine.c (e.g. the dpi_engine
+ * binary), these resolve to zero/NULL so the periodic analysis block is
+ * skipped at runtime without linker errors.
+ */
+extern int g_rule_engine_quiet __attribute__((weak));
+extern void rule_engine_analyze_all_flows(rule_engine_t *, const dpi_engine_t *) __attribute__((weak));
+
+#define LIVE_QUEUE_CAPACITY_DEFAULT 4096
+#define LIVE_PIPELINE_MAX_WORKERS 16
+
+typedef enum {
+    LIVE_TASK_STAGE_IDS = 0,
+    LIVE_TASK_STAGE_MQTT = 1
+} live_task_stage_t;
+
+typedef struct {
+    parsed_packet_t parsed;
+    uint8_t *raw_copy;
+    uint32_t flow_hash;
+    int mqtt_candidate;
+    int ids_blocked;
+} live_packet_task_t;
+
+typedef struct {
+    live_packet_task_t **items;
+    uint32_t capacity;
+    uint32_t head;
+    uint32_t tail;
+    uint32_t size;
+    int stop;
+    pthread_mutex_t mutex;
+    pthread_cond_t not_empty;
+} live_packet_queue_t;
+
+typedef struct live_pipeline_runtime_s live_pipeline_runtime_t;
+
+typedef struct {
+    live_pipeline_runtime_t *runtime;
+    uint32_t worker_index;
+} live_worker_arg_t;
+
+struct live_pipeline_runtime_s {
+    live_capture_ctx_t *ctx;
+    live_packet_queue_t ids_queues[LIVE_PIPELINE_MAX_WORKERS];
+    live_packet_queue_t mqtt_queues[LIVE_PIPELINE_MAX_WORKERS];
+    pthread_t ids_threads[LIVE_PIPELINE_MAX_WORKERS];
+    pthread_t mqtt_threads[LIVE_PIPELINE_MAX_WORKERS];
+    int ids_thread_started[LIVE_PIPELINE_MAX_WORKERS];
+    int mqtt_thread_started[LIVE_PIPELINE_MAX_WORKERS];
+    uint32_t ids_worker_count;
+    uint32_t mqtt_worker_count;
+    pthread_mutex_t ids_callback_mutex;
+    int ids_callback_mutex_initialized;
+    uint64_t ids_queue_drops;
+    uint64_t mqtt_queue_drops;
+    uint64_t ids_processed;
+    uint64_t mqtt_processed;
+    uint64_t ids_queue_high_watermark;
+    uint64_t mqtt_queue_high_watermark;
+    live_worker_arg_t ids_args[LIVE_PIPELINE_MAX_WORKERS];
+    live_worker_arg_t mqtt_args[LIVE_PIPELINE_MAX_WORKERS];
+};
+
+static int live_packet_is_mqtt_candidate(const parsed_packet_t *packet);
+
+static void live_counter_inc_u64(uint64_t *value) {
+    __sync_fetch_and_add(value, 1);
+}
+
+static void live_counter_max_u64(uint64_t *value, uint64_t candidate) {
+    uint64_t current;
+    do {
+        current = __atomic_load_n(value, __ATOMIC_RELAXED);
+        if (candidate <= current) {
+            return;
+        }
+    } while (!__sync_bool_compare_and_swap(value, current, candidate));
+}
+
+static uint32_t live_normalize_worker_count(uint32_t requested, uint32_t default_value) {
+    if (requested == 0) {
+        return default_value;
+    }
+    if (requested > LIVE_PIPELINE_MAX_WORKERS) {
+        return LIVE_PIPELINE_MAX_WORKERS;
+    }
+    return requested;
+}
+
+static uint32_t live_parse_env_u32(const char *name, uint32_t fallback, uint32_t min_value, uint32_t max_value) {
+    const char *raw = getenv(name);
+    char *endptr = NULL;
+    unsigned long parsed;
+
+    if (!raw || raw[0] == '\0') {
+        return fallback;
+    }
+
+    errno = 0;
+    parsed = strtoul(raw, &endptr, 10);
+    if (errno != 0 || endptr == raw || *endptr != '\0' || parsed > UINT_MAX) {
+        return fallback;
+    }
+
+    if (parsed < min_value) {
+        return min_value;
+    }
+    if (parsed > max_value) {
+        return max_value;
+    }
+    return (uint32_t)parsed;
+}
+
+static int live_parse_env_bool(const char *name, int fallback) {
+    const char *raw = getenv(name);
+    if (!raw || raw[0] == '\0') {
+        return fallback;
+    }
+
+    if (strcasecmp(raw, "1") == 0 ||
+        strcasecmp(raw, "true") == 0 ||
+        strcasecmp(raw, "yes") == 0 ||
+        strcasecmp(raw, "y") == 0 ||
+        strcasecmp(raw, "on") == 0) {
+        return 1;
+    }
+
+    if (strcasecmp(raw, "0") == 0 ||
+        strcasecmp(raw, "false") == 0 ||
+        strcasecmp(raw, "no") == 0 ||
+        strcasecmp(raw, "n") == 0 ||
+        strcasecmp(raw, "off") == 0) {
+        return 0;
+    }
+
+    return fallback;
+}
+
+static uint32_t live_flow_hash(const parsed_packet_t *parsed) {
+    uint32_t h = 2166136261u;
+
+    if (!parsed) {
+        return 0;
+    }
+
+    h ^= parsed->layer3.src_ip;
+    h *= 16777619u;
+    h ^= parsed->layer3.dst_ip;
+    h *= 16777619u;
+    h ^= parsed->layer4.src_port;
+    h *= 16777619u;
+    h ^= parsed->layer4.dst_port;
+    h *= 16777619u;
+    h ^= parsed->layer3.protocol;
+    h *= 16777619u;
+
+    return h;
+}
+
+static live_packet_task_t *live_packet_task_create(const parsed_packet_t *parsed, int copy_raw_data) {
+    live_packet_task_t *task = (live_packet_task_t *)calloc(1, sizeof(live_packet_task_t));
+    if (!task) {
+        return NULL;
+    }
+
+    memcpy(&task->parsed, parsed, sizeof(parsed_packet_t));
+    task->parsed.flow = NULL;
+
+    task->flow_hash = live_flow_hash(parsed);
+    task->mqtt_candidate = live_packet_is_mqtt_candidate(parsed);
+    task->ids_blocked = 0;
+
+    if (copy_raw_data && parsed->raw_data && parsed->raw_data_len > 0) {
+        task->raw_copy = (uint8_t *)malloc(parsed->raw_data_len);
+        if (!task->raw_copy) {
+            free(task);
+            return NULL;
+        }
+        memcpy(task->raw_copy, parsed->raw_data, parsed->raw_data_len);
+        task->parsed.raw_data = task->raw_copy;
+    }
+
+    return task;
+}
+
+static void live_packet_task_destroy(live_packet_task_t *task) {
+    if (!task) {
+        return;
+    }
+    free(task->raw_copy);
+    free(task);
+}
+
+static int live_packet_queue_init(live_packet_queue_t *q, uint32_t capacity) {
+    memset(q, 0, sizeof(*q));
+    q->items = (live_packet_task_t **)calloc(capacity, sizeof(live_packet_task_t *));
+    if (!q->items) {
+        return -1;
+    }
+    q->capacity = capacity;
+    if (pthread_mutex_init(&q->mutex, NULL) != 0) {
+        free(q->items);
+        q->items = NULL;
+        return -1;
+    }
+    if (pthread_cond_init(&q->not_empty, NULL) != 0) {
+        pthread_mutex_destroy(&q->mutex);
+        free(q->items);
+        q->items = NULL;
+        return -1;
+    }
+    return 0;
+}
+
+static void live_packet_queue_stop(live_packet_queue_t *q) {
+    pthread_mutex_lock(&q->mutex);
+    q->stop = 1;
+    pthread_cond_broadcast(&q->not_empty);
+    pthread_mutex_unlock(&q->mutex);
+}
+
+static void live_packet_queue_destroy(live_packet_queue_t *q) {
+    uint32_t i;
+    if (!q->items) {
+        return;
+    }
+
+    for (i = 0; i < q->capacity; i++) {
+        if (q->items[i]) {
+            live_packet_task_destroy(q->items[i]);
+            q->items[i] = NULL;
+        }
+    }
+
+    pthread_cond_destroy(&q->not_empty);
+    pthread_mutex_destroy(&q->mutex);
+    free(q->items);
+    q->items = NULL;
+}
+
+static int live_packet_queue_push_nowait(live_packet_queue_t *q, live_packet_task_t *task) {
+    int rc = 0;
+    pthread_mutex_lock(&q->mutex);
+    if (q->size >= q->capacity || q->stop) {
+        rc = -1;
+    } else {
+        q->items[q->tail] = task;
+        q->tail = (q->tail + 1) % q->capacity;
+        q->size++;
+        pthread_cond_signal(&q->not_empty);
+    }
+    pthread_mutex_unlock(&q->mutex);
+    return rc;
+}
+
+static uint32_t live_packet_queue_size(live_packet_queue_t *q) {
+    uint32_t size;
+    pthread_mutex_lock(&q->mutex);
+    size = q->size;
+    pthread_mutex_unlock(&q->mutex);
+    return size;
+}
+
+static live_packet_task_t *live_packet_queue_pop_wait(live_packet_queue_t *q) {
+    live_packet_task_t *task = NULL;
+
+    pthread_mutex_lock(&q->mutex);
+    while (q->size == 0 && !q->stop) {
+        pthread_cond_wait(&q->not_empty, &q->mutex);
+    }
+
+    if (q->size > 0) {
+        task = q->items[q->head];
+        q->items[q->head] = NULL;
+        q->head = (q->head + 1) % q->capacity;
+        q->size--;
+    }
+
+    pthread_mutex_unlock(&q->mutex);
+    return task;
+}
+
+static int live_packet_is_mqtt_candidate(const parsed_packet_t *packet) {
+    return packet && (packet->layer4.dst_port == 1883 ||
+                      packet->layer4.src_port == 1883 ||
+                      packet->layer4.dst_port == 8883 ||
+                      packet->layer4.src_port == 8883);
+}
+
+static void *live_ids_worker(void *arg) {
+    live_worker_arg_t *worker_arg = (live_worker_arg_t *)arg;
+    live_pipeline_runtime_t *rt = worker_arg->runtime;
+    live_capture_ctx_t *ctx = rt->ctx;
+    uint32_t worker_index = worker_arg->worker_index;
+
+    while (!g_live_capture_stop) {
+        live_packet_task_t *task = live_packet_queue_pop_wait(&rt->ids_queues[worker_index]);
+
+        if (!task) {
+            if (rt->ids_queues[worker_index].stop) {
+                break;
+            }
+            continue;
+        }
+
+        if (ctx->ids_mode && ctx->ids_callback && ctx->rule_engine) {
+            pthread_mutex_lock(&rt->ids_callback_mutex);
+            ctx->ids_callback(ctx->rule_engine, &task->parsed);
+            pthread_mutex_unlock(&rt->ids_callback_mutex);
+        }
+
+        if (ctx->ids_mode && ctx->rule_engine && ctx->ids_is_blocked_callback) {
+            pthread_mutex_lock(&rt->ids_callback_mutex);
+            task->ids_blocked = ctx->ids_is_blocked_callback(ctx->rule_engine, task->parsed.layer3.src_ip);
+            pthread_mutex_unlock(&rt->ids_callback_mutex);
+        }
+
+        if (ctx->mqtt_mode && ctx->mqtt_callback && task->mqtt_candidate && !task->ids_blocked) {
+            uint32_t mqtt_index = task->flow_hash % rt->mqtt_worker_count;
+            if (live_packet_queue_push_nowait(&rt->mqtt_queues[mqtt_index], task) != 0) {
+                live_counter_inc_u64(&rt->mqtt_queue_drops);
+                live_packet_task_destroy(task);
+            } else {
+                uint32_t qsize = live_packet_queue_size(&rt->mqtt_queues[mqtt_index]);
+                live_counter_max_u64(&rt->mqtt_queue_high_watermark, qsize);
+            }
+        } else {
+            live_packet_task_destroy(task);
+        }
+
+        live_counter_inc_u64(&rt->ids_processed);
+    }
+
+    return NULL;
+}
+
+static void *live_mqtt_worker(void *arg) {
+    live_worker_arg_t *worker_arg = (live_worker_arg_t *)arg;
+    live_pipeline_runtime_t *rt = worker_arg->runtime;
+    live_capture_ctx_t *ctx = rt->ctx;
+    uint32_t worker_index = worker_arg->worker_index;
+
+    while (!g_live_capture_stop) {
+        live_packet_task_t *task = live_packet_queue_pop_wait(&rt->mqtt_queues[worker_index]);
+        if (!task) {
+            if (rt->mqtt_queues[worker_index].stop) {
+                break;
+            }
+            continue;
+        }
+
+        if (ctx->mqtt_mode && ctx->mqtt_callback) {
+            ctx->mqtt_callback(ctx->mqtt_context, &task->parsed);
+        }
+
+        live_packet_task_destroy(task);
+        live_counter_inc_u64(&rt->mqtt_processed);
+    }
+
+    return NULL;
+}
+
+static int live_pipeline_start(live_capture_ctx_t *ctx, live_pipeline_runtime_t *rt) {
+    uint32_t i;
+
+    memset(rt, 0, sizeof(*rt));
+    rt->ctx = ctx;
+    rt->ids_worker_count = live_normalize_worker_count(ctx->config.ids_workers, 1);
+    rt->mqtt_worker_count = live_normalize_worker_count(ctx->config.mqtt_workers, 2);
+
+    if (pthread_mutex_init(&rt->ids_callback_mutex, NULL) != 0) {
+        return -1;
+    }
+    rt->ids_callback_mutex_initialized = 1;
+
+    for (i = 0; i < rt->ids_worker_count; i++) {
+        if (live_packet_queue_init(&rt->ids_queues[i], ctx->config.pipeline_queue_capacity) != 0) {
+            goto fail;
+        }
+    }
+    for (i = 0; i < rt->mqtt_worker_count; i++) {
+        if (live_packet_queue_init(&rt->mqtt_queues[i], ctx->config.pipeline_queue_capacity) != 0) {
+            goto fail;
+        }
+    }
+
+    for (i = 0; i < rt->ids_worker_count; i++) {
+        rt->ids_args[i].runtime = rt;
+        rt->ids_args[i].worker_index = i;
+        if (pthread_create(&rt->ids_threads[i], NULL, live_ids_worker, &rt->ids_args[i]) != 0) {
+            goto fail;
+        }
+        rt->ids_thread_started[i] = 1;
+    }
+
+    for (i = 0; i < rt->mqtt_worker_count; i++) {
+        rt->mqtt_args[i].runtime = rt;
+        rt->mqtt_args[i].worker_index = i;
+        if (pthread_create(&rt->mqtt_threads[i], NULL, live_mqtt_worker, &rt->mqtt_args[i]) != 0) {
+            goto fail;
+        }
+        rt->mqtt_thread_started[i] = 1;
+    }
+
+    return 0;
+
+fail:
+    for (i = 0; i < rt->ids_worker_count; i++) {
+        live_packet_queue_stop(&rt->ids_queues[i]);
+    }
+    for (i = 0; i < rt->mqtt_worker_count; i++) {
+        live_packet_queue_stop(&rt->mqtt_queues[i]);
+    }
+
+    for (i = 0; i < rt->ids_worker_count; i++) {
+        if (rt->ids_thread_started[i]) {
+            pthread_join(rt->ids_threads[i], NULL);
+            rt->ids_thread_started[i] = 0;
+        }
+    }
+    for (i = 0; i < rt->mqtt_worker_count; i++) {
+        if (rt->mqtt_thread_started[i]) {
+            pthread_join(rt->mqtt_threads[i], NULL);
+            rt->mqtt_thread_started[i] = 0;
+        }
+    }
+
+    for (i = 0; i < LIVE_PIPELINE_MAX_WORKERS; i++) {
+        live_packet_queue_destroy(&rt->ids_queues[i]);
+        live_packet_queue_destroy(&rt->mqtt_queues[i]);
+    }
+
+    if (rt->ids_callback_mutex_initialized) {
+        pthread_mutex_destroy(&rt->ids_callback_mutex);
+        rt->ids_callback_mutex_initialized = 0;
+    }
+
+    return -1;
+}
+
+static void live_pipeline_stop(live_pipeline_runtime_t *rt) {
+    uint32_t i;
+
+    for (i = 0; i < rt->ids_worker_count; i++) {
+        live_packet_queue_stop(&rt->ids_queues[i]);
+    }
+    for (i = 0; i < rt->mqtt_worker_count; i++) {
+        live_packet_queue_stop(&rt->mqtt_queues[i]);
+    }
+
+    for (i = 0; i < rt->ids_worker_count; i++) {
+        if (rt->ids_thread_started[i]) {
+            pthread_join(rt->ids_threads[i], NULL);
+            rt->ids_thread_started[i] = 0;
+        }
+    }
+    for (i = 0; i < rt->mqtt_worker_count; i++) {
+        if (rt->mqtt_thread_started[i]) {
+            pthread_join(rt->mqtt_threads[i], NULL);
+            rt->mqtt_thread_started[i] = 0;
+        }
+    }
+
+    for (i = 0; i < rt->ids_worker_count; i++) {
+        live_packet_queue_destroy(&rt->ids_queues[i]);
+    }
+    for (i = 0; i < rt->mqtt_worker_count; i++) {
+        live_packet_queue_destroy(&rt->mqtt_queues[i]);
+    }
+
+    if (rt->ids_callback_mutex_initialized) {
+        pthread_mutex_destroy(&rt->ids_callback_mutex);
+        rt->ids_callback_mutex_initialized = 0;
+    }
+}
+
+static uint32_t live_pipeline_total_queue_depth(live_pipeline_runtime_t *rt, live_task_stage_t stage) {
+    uint32_t i;
+    uint32_t total = 0;
+
+    if (stage == LIVE_TASK_STAGE_IDS) {
+        for (i = 0; i < rt->ids_worker_count; i++) {
+            total += live_packet_queue_size(&rt->ids_queues[i]);
+        }
+    } else {
+        for (i = 0; i < rt->mqtt_worker_count; i++) {
+            total += live_packet_queue_size(&rt->mqtt_queues[i]);
+        }
+    }
+
+    return total;
+}
+
+/* ========== Real-time Metrics Snapshot Writer ========== */
+
+static void live_capture_write_metrics_snapshot(const live_capture_ctx_t *ctx) {
+    if (!ctx || ctx->realtime_metrics_file[0] == '\0') {
+        return;
+    }
+
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    double elapsed = (now.tv_sec - ctx->stats.capture_start.tv_sec) +
+                     (now.tv_usec - ctx->stats.capture_start.tv_usec) / 1000000.0;
+
+    double pps = (elapsed > 0.0) ? (ctx->stats.packets_captured / elapsed) : 0.0;
+    double mbps = (elapsed > 0.0) ? ((ctx->stats.bytes_captured * 8.0) / (elapsed * 1000000.0)) : 0.0;
+
+    /*
+     * Real-time attack detection: run the full flow-level analysis against
+     * current DPI flows every 5 seconds so that attacks are visible in the
+     * live snapshot immediately, not just after capture ends.
+     *
+     * add_detection() deduplicates by (attack_type, attacker_ip, target_ip)
+     * so calling this repeatedly is safe — attacks_by_type is incremented
+     * only on the first detection of each unique (type, src, dst) tuple.
+     * g_rule_engine_quiet suppresses progress banners during periodic calls.
+     */
+    if (ctx->ids_mode && ctx->rule_engine && ctx->dpi_engine
+            && rule_engine_analyze_all_flows) {
+        static time_t last_ids_analysis_time = 0;
+        time_t now_t = (time_t)now.tv_sec;
+        if (now_t - last_ids_analysis_time >= 5) {
+            last_ids_analysis_time = now_t;
+            g_rule_engine_quiet = 1;
+            rule_engine_analyze_all_flows((rule_engine_t *)ctx->rule_engine, ctx->dpi_engine);
+            g_rule_engine_quiet = 0;
+        }
+    }
+
+    uint64_t ids_packets = 0;
+    uint64_t ids_attacks = 0;
+    uint32_t ids_blocked_ips = 0;
+    if (ctx->ids_mode && ctx->rule_engine) {
+        const rule_engine_t *rule = (const rule_engine_t *)ctx->rule_engine;
+        ids_packets = rule->total_packets_analyzed;
+        ids_attacks = rule->total_attacks_detected;
+        ids_blocked_ips = rule->blocked_ip_count;
+    }
+
+    mqtt_statistics_t mqtt_stats;
+    memset(&mqtt_stats, 0, sizeof(mqtt_stats));
+    mqtt_get_statistics(&mqtt_stats);
+
+    /* Collect per-attack-type counts from the rule engine for real-time panels */
+    uint64_t at_syn_flood         = 0;
+    uint64_t at_udp_flood         = 0;
+    uint64_t at_http_flood        = 0;
+    uint64_t at_icmp_flood        = 0;
+    uint64_t at_dns_amp           = 0;
+    uint64_t at_ntp_amp           = 0;
+    uint64_t at_smurf             = 0;
+    uint64_t at_fraggle           = 0;
+    uint64_t at_ping_of_death     = 0;
+    uint64_t at_land              = 0;
+    uint64_t at_teardrop          = 0;
+    uint64_t at_ip_spoofing       = 0;
+    uint64_t at_tcp_syn_scan      = 0;
+    uint64_t at_tcp_connect_scan  = 0;
+    uint64_t at_udp_scan          = 0;
+    uint64_t at_xmas_scan         = 0;
+    uint64_t at_null_scan         = 0;
+    uint64_t at_fin_scan          = 0;
+    uint64_t at_port_scan_generic = 0;
+    uint64_t at_rudy              = 0;
+    uint64_t at_slowloris         = 0;
+    uint64_t at_arp_spoofing      = 0;
+
+    if (ctx->ids_mode && ctx->rule_engine) {
+        const rule_engine_t *rule = (const rule_engine_t *)ctx->rule_engine;
+        at_syn_flood         = rule->attacks_by_type[ATTACK_SYN_FLOOD];
+        at_udp_flood         = rule->attacks_by_type[ATTACK_UDP_FLOOD];
+        at_http_flood        = rule->attacks_by_type[ATTACK_HTTP_FLOOD];
+        at_icmp_flood        = rule->attacks_by_type[ATTACK_ICMP_FLOOD];
+        at_dns_amp           = rule->attacks_by_type[ATTACK_DNS_AMPLIFICATION];
+        at_ntp_amp           = rule->attacks_by_type[ATTACK_NTP_AMPLIFICATION];
+        at_smurf             = rule->attacks_by_type[ATTACK_SMURF];
+        at_fraggle           = rule->attacks_by_type[ATTACK_FRAGGLE];
+        at_ping_of_death     = rule->attacks_by_type[ATTACK_PING_OF_DEATH];
+        at_land              = rule->attacks_by_type[ATTACK_LAND_ATTACK];
+        at_teardrop          = rule->attacks_by_type[ATTACK_TEARDROP];
+        at_ip_spoofing       = rule->attacks_by_type[ATTACK_IP_SPOOFING];
+        at_tcp_syn_scan      = rule->attacks_by_type[ATTACK_TCP_SYN_SCAN];
+        at_tcp_connect_scan  = rule->attacks_by_type[ATTACK_TCP_CONNECT_SCAN];
+        at_udp_scan          = rule->attacks_by_type[ATTACK_UDP_SCAN];
+        at_xmas_scan         = rule->attacks_by_type[ATTACK_XMAS_SCAN];
+        at_null_scan         = rule->attacks_by_type[ATTACK_NULL_SCAN];
+        at_fin_scan          = rule->attacks_by_type[ATTACK_FIN_SCAN];
+        at_port_scan_generic = rule->attacks_by_type[ATTACK_PORT_SCAN_GENERIC];
+        at_rudy              = rule->attacks_by_type[ATTACK_RUDY];
+        at_slowloris         = rule->attacks_by_type[ATTACK_SLOWLORIS];
+        at_arp_spoofing      = rule->attacks_by_type[ATTACK_ARP_SPOOFING];
+    }
+
+    char tmp_file[320];
+    snprintf(tmp_file, sizeof(tmp_file), "%s.tmp", ctx->realtime_metrics_file);
+
+    FILE *fp = fopen(tmp_file, "w");
+    if (!fp) {
+        return;
+    }
+
+    fprintf(fp,
+            "{\n"
+            "  \"timestamp_unix\": %ld,\n"
+            "  \"capture\": {\n"
+            "    \"packets_captured\": %lu,\n"
+            "    \"bytes_captured\": %lu,\n"
+            "    \"packets_per_second\": %.3f,\n"
+            "    \"throughput_mbps\": %.6f,\n"
+            "    \"elapsed_seconds\": %.3f\n"
+            "  },\n"
+            "  \"dpi\": {\n"
+            "    \"flows\": %u,\n"
+            "    \"total_packets\": %lu,\n"
+            "    \"total_bytes\": %lu,\n"
+            "    \"l2_parsed\": %lu,\n"
+            "    \"l3_parsed\": %lu,\n"
+            "    \"l4_parsed\": %lu,\n"
+            "    \"l5_parsed\": %lu\n"
+            "  },\n"
+            "  \"ids\": {\n"
+            "    \"packets_analyzed\": %lu,\n"
+            "    \"attacks_detected\": %lu,\n"
+            "    \"blocked_ips\": %u\n"
+            "  },\n"
+            "  \"mqtt\": {\n"
+            "    \"total_packets\": %lu,\n"
+            "    \"connect_count\": %lu,\n"
+            "    \"publish_count\": %lu,\n"
+            "    \"subscribe_count\": %lu,\n"
+            "    \"pingreq_count\": %lu,\n"
+            "    \"disconnect_count\": %lu,\n"
+            "    \"malformed_packets\": %lu\n"
+            "  },\n"
+            "  \"attacks_by_type\": {\n"
+            "    \"syn_flood\": %lu,\n"
+            "    \"udp_flood\": %lu,\n"
+            "    \"http_flood\": %lu,\n"
+            "    \"icmp_flood\": %lu,\n"
+            "    \"dns_amplification\": %lu,\n"
+            "    \"ntp_amplification\": %lu,\n"
+            "    \"smurf_attack\": %lu,\n"
+            "    \"fraggle_attack\": %lu,\n"
+            "    \"ping_of_death\": %lu,\n"
+            "    \"land_attack\": %lu,\n"
+            "    \"teardrop_attack\": %lu,\n"
+            "    \"ip_spoofing\": %lu,\n"
+            "    \"tcp_syn_scan\": %lu,\n"
+            "    \"tcp_connect_scan\": %lu,\n"
+            "    \"udp_scan\": %lu,\n"
+            "    \"xmas_scan\": %lu,\n"
+            "    \"null_scan\": %lu,\n"
+            "    \"fin_scan\": %lu,\n"
+            "    \"port_scan_generic\": %lu,\n"
+            "    \"rudy_attack\": %lu,\n"
+            "    \"slowloris\": %lu,\n"
+            "    \"arp_spoofing\": %lu\n"
+            "  }\n"
+            "}\n",
+            (long)now.tv_sec,
+            ctx->stats.packets_captured,
+            ctx->stats.bytes_captured,
+            pps,
+            mbps,
+            elapsed,
+            ctx->dpi_engine->flow_count,
+            ctx->dpi_engine->total_packets,
+            ctx->dpi_engine->total_bytes,
+            ctx->dpi_engine->l2_parsed,
+            ctx->dpi_engine->l3_parsed,
+            ctx->dpi_engine->l4_parsed,
+            ctx->dpi_engine->l5_parsed,
+            ids_packets,
+            ids_attacks,
+            ids_blocked_ips,
+            mqtt_stats.total_packets,
+            mqtt_stats.connect_count,
+            mqtt_stats.publish_count,
+            mqtt_stats.subscribe_count,
+            mqtt_stats.pingreq_count,
+            mqtt_stats.disconnect_count,
+            mqtt_stats.malformed_packets,
+            at_syn_flood,
+            at_udp_flood,
+            at_http_flood,
+            at_icmp_flood,
+            at_dns_amp,
+            at_ntp_amp,
+            at_smurf,
+            at_fraggle,
+            at_ping_of_death,
+            at_land,
+            at_teardrop,
+            at_ip_spoofing,
+            at_tcp_syn_scan,
+            at_tcp_connect_scan,
+            at_udp_scan,
+            at_xmas_scan,
+            at_null_scan,
+            at_fin_scan,
+            at_port_scan_generic,
+            at_rudy,
+            at_slowloris,
+            at_arp_spoofing);
+
+    fclose(fp);
+    rename(tmp_file, ctx->realtime_metrics_file);
+}
 
 /* ========== Global Stop Flag for Signal Handler ========== */
 volatile sig_atomic_t g_live_capture_stop = 0;
@@ -38,7 +756,20 @@ void live_capture_signal_handler(int signum) {
 /* ========== Mode Selection Prompt ========== */
 
 capture_mode_t prompt_capture_mode(void) {
+    const char *mode_env = getenv("IWSN_CAPTURE_MODE");
     int choice = 0;
+
+    if (mode_env && mode_env[0] != '\0') {
+        if (strcasecmp(mode_env, "live") == 0 || strcasecmp(mode_env, "2") == 0) {
+            printf("\n  [Auto] IWSN_CAPTURE_MODE=live -> Real-Time Capture\n\n");
+            return CAPTURE_MODE_LIVE;
+        }
+        if (strcasecmp(mode_env, "pcap") == 0 || strcasecmp(mode_env, "offline") == 0 ||
+            strcasecmp(mode_env, "1") == 0) {
+            printf("\n  [Auto] IWSN_CAPTURE_MODE=pcap -> PCAP File Analysis\n\n");
+            return CAPTURE_MODE_PCAP;
+        }
+    }
 
     printf("\n");
     printf("╔════════════════════════════════════════════════════════════════╗\n");
@@ -198,19 +929,89 @@ void live_capture_config_defaults(live_capture_config_t *config) {
     config->promiscuous = 1;          // Promiscuous mode on
     config->snap_length = 65535;      // Full packet capture
     config->read_timeout_ms = 1000;   // 1 second timeout for pcap_next_ex
+    config->pipeline_queue_capacity = LIVE_QUEUE_CAPACITY_DEFAULT;
+    config->ids_workers = 1;
+    config->mqtt_workers = 2;
     config->bpf_filter[0] = '\0';
+
+    config->pipeline_queue_capacity = live_parse_env_u32(
+        "IWSN_PIPELINE_QUEUE_CAPACITY",
+        config->pipeline_queue_capacity,
+        64,
+        65535
+    );
+    config->ids_workers = live_parse_env_u32(
+        "IWSN_IDS_WORKERS",
+        config->ids_workers,
+        1,
+        LIVE_PIPELINE_MAX_WORKERS
+    );
+    config->mqtt_workers = live_parse_env_u32(
+        "IWSN_MQTT_WORKERS",
+        config->mqtt_workers,
+        1,
+        LIVE_PIPELINE_MAX_WORKERS
+    );
 }
 
 /* ========== Interactive Configuration Prompt ========== */
 
 int prompt_live_capture_config(live_capture_config_t *config) {
+    const char *iface_env;
+    const char *filter_env;
+    int auto_config = 0;
     char input_buf[512];
 
     live_capture_config_defaults(config);
 
+    iface_env = getenv("IWSN_LIVE_INTERFACE");
+    filter_env = getenv("IWSN_LIVE_BPF_FILTER");
+
+    config->max_packets = live_parse_env_u32(
+        "IWSN_LIVE_MAX_PACKETS",
+        config->max_packets,
+        0,
+        UINT_MAX
+    );
+    config->duration_seconds = live_parse_env_u32(
+        "IWSN_LIVE_DURATION_SECONDS",
+        config->duration_seconds,
+        0,
+        UINT_MAX
+    );
+    config->promiscuous = live_parse_env_bool("IWSN_LIVE_PROMISCUOUS", config->promiscuous);
+
+    if (filter_env && filter_env[0] != '\0') {
+        snprintf(config->bpf_filter, sizeof(config->bpf_filter), "%s", filter_env);
+        auto_config = 1;
+    }
+
     // 1. Select interface
-    if (select_network_interface(config->interface_name, sizeof(config->interface_name)) != 0) {
-        return -1;
+    if (iface_env && iface_env[0] != '\0') {
+        snprintf(config->interface_name, sizeof(config->interface_name), "%s", iface_env);
+        auto_config = 1;
+    } else {
+        if (select_network_interface(config->interface_name, sizeof(config->interface_name)) != 0) {
+            return -1;
+        }
+    }
+
+    if (getenv("IWSN_AUTOMATED_LIVE_CONFIG")) {
+        auto_config = 1;
+    }
+
+    if (auto_config) {
+        printf("\n  [Auto] Using environment-driven live configuration\n");
+        printf("  [Auto] Interface: %s\n", config->interface_name);
+        printf("  [Auto] Filter: %s\n", strlen(config->bpf_filter) > 0 ? config->bpf_filter : "(none)");
+        printf("  [Auto] Max Packets: %u\n", config->max_packets);
+        printf("  [Auto] Duration: %u sec\n", config->duration_seconds);
+        printf("  [Auto] Promiscuous: %s\n", config->promiscuous ? "YES" : "NO");
+        printf("  [Auto] IDS Workers: %u | MQTT Workers: %u | Queue: %u\n\n",
+               config->ids_workers,
+               config->mqtt_workers,
+               config->pipeline_queue_capacity);
+        return 0;
     }
 
     // 2. BPF Filter (optional)
@@ -283,7 +1084,13 @@ int prompt_live_capture_config(live_capture_config_t *config) {
     printf("  │  Duration:     %-37u sec│\n", config->duration_seconds);
     printf("  │  Promiscuous:  %-40s │\n", config->promiscuous ? "YES" : "NO");
     printf("  │  Snap Length:  %-37d B  │\n", config->snap_length);
+    printf("  │  IDS Workers:  %-40u │\n", config->ids_workers);
+    printf("  │  MQTT Workers: %-40u │\n", config->mqtt_workers);
+    printf("  │  Queue Size:   %-40u │\n", config->pipeline_queue_capacity);
     printf("  └─────────────────────────────────────────────────────────┘\n\n");
+
+    printf("  [Pipeline Tuning] Override with env vars if needed:\n");
+    printf("    IWSN_IDS_WORKERS, IWSN_MQTT_WORKERS, IWSN_PIPELINE_QUEUE_CAPACITY\n\n");
 
     return 0;
 }
@@ -302,7 +1109,13 @@ live_capture_ctx_t* live_capture_init(live_capture_config_t *config, dpi_engine_
     ctx->stop_requested = 0;
     ctx->rule_engine = NULL;
     ctx->ids_callback = NULL;
+    ctx->ids_is_blocked_callback = NULL;
     ctx->ids_mode = 0;
+    ctx->mqtt_context = NULL;
+    ctx->mqtt_callback = NULL;
+    ctx->mqtt_mode = 0;
+    snprintf(ctx->realtime_metrics_file, sizeof(ctx->realtime_metrics_file), "live_realtime_metrics.txt");
+    ctx->metrics_flush_interval_packets = 25;
 
     // Initialize stats
     memset(&ctx->stats, 0, sizeof(live_capture_stats_t));
@@ -325,6 +1138,7 @@ int live_capture_start(live_capture_ctx_t *ctx) {
     const u_char *packet;
     int res;
     time_t deadline = 0;
+    live_pipeline_runtime_t pipeline;
 
     printf("[LIVE CAPTURE] Opening interface: %s\n", ctx->config.interface_name);
 
@@ -397,7 +1211,19 @@ int live_capture_start(live_capture_ctx_t *ctx) {
     ctx->pcap_stats.start_time = ctx->stats.capture_start;
     ctx->stats.is_running = 1;
 
-    printf("[LIVE CAPTURE] Capture started. Press Ctrl+C to stop.\n");
+    if (live_pipeline_start(ctx, &pipeline) != 0) {
+        fprintf(stderr, "[Error] Failed to start multithreaded live pipeline\n");
+        pcap_close(ctx->handle);
+        ctx->handle = NULL;
+        signal(SIGINT, SIG_DFL);
+        return -1;
+    }
+
+        printf("[LIVE CAPTURE] Capture started. Press Ctrl+C to stop.\n");
+        printf("[LIVE CAPTURE] Threaded pipeline enabled: IDS workers=%u, MQTT workers=%u, queue/shard=%u\n",
+            pipeline.ids_worker_count,
+            pipeline.mqtt_worker_count,
+            ctx->config.pipeline_queue_capacity);
     printf("─────────────────────────────────────────────────────────────\n");
     printf("  %-10s %-18s %-18s %-8s %-8s %-16s\n",
            "Packet#", "Source IP", "Dest IP", "Proto", "Size", "L7 Protocol");
@@ -456,8 +1282,25 @@ int live_capture_start(live_capture_ctx_t *ctx) {
             parsed.packet_number = (uint32_t)ctx->stats.packets_captured;
 
             // IDS mode: analyze packet for attacks in real-time via callback
-            if (ctx->ids_mode && ctx->ids_callback && ctx->rule_engine) {
-                ctx->ids_callback(ctx->rule_engine, &parsed);
+            if (ctx->ids_mode || ctx->mqtt_mode) {
+                uint32_t ids_index;
+                int needs_raw_copy;
+                live_packet_task_t *task;
+
+                needs_raw_copy = live_packet_is_mqtt_candidate(&parsed);
+                task = live_packet_task_create(&parsed, needs_raw_copy);
+                if (!task) {
+                    live_counter_inc_u64(&pipeline.ids_queue_drops);
+                } else {
+                    ids_index = task->flow_hash % pipeline.ids_worker_count;
+                    if (live_packet_queue_push_nowait(&pipeline.ids_queues[ids_index], task) != 0) {
+                        live_counter_inc_u64(&pipeline.ids_queue_drops);
+                        live_packet_task_destroy(task);
+                    } else {
+                        uint32_t qsize = live_packet_queue_size(&pipeline.ids_queues[ids_index]);
+                        live_counter_max_u64(&pipeline.ids_queue_high_watermark, qsize);
+                    }
+                }
             }
 
             // Store packet in flow
@@ -493,15 +1336,43 @@ int live_capture_start(live_capture_ctx_t *ctx) {
             if (ctx->stats.packets_captured % 100 == 0) {
                 live_capture_print_realtime_stats(ctx);
             }
+
+            if (ctx->metrics_flush_interval_packets > 0 &&
+                (ctx->stats.packets_captured % ctx->metrics_flush_interval_packets == 0)) {
+                live_capture_write_metrics_snapshot(ctx);
+            }
         } else {
             // Non-IP packet (ARP, LLDP, etc.)
             ctx->pcap_stats.non_ip_packets++;
+
+            if (ctx->metrics_flush_interval_packets > 0 &&
+                (ctx->stats.packets_captured % ctx->metrics_flush_interval_packets == 0)) {
+                live_capture_write_metrics_snapshot(ctx);
+            }
         }
     }
 
     /* ===== Capture finished ===== */
     gettimeofday(&ctx->stats.capture_end, NULL);
     ctx->stats.is_running = 0;
+
+    uint32_t ids_depth_at_stop = live_pipeline_total_queue_depth(&pipeline, LIVE_TASK_STAGE_IDS);
+    uint32_t mqtt_depth_at_stop = live_pipeline_total_queue_depth(&pipeline, LIVE_TASK_STAGE_MQTT);
+    live_pipeline_stop(&pipeline);
+    if (pipeline.ids_queue_drops > 0 || pipeline.mqtt_queue_drops > 0) {
+         printf("[LIVE CAPTURE] Queue drops: IDS=%lu MQTT=%lu\n",
+               pipeline.ids_queue_drops,
+               pipeline.mqtt_queue_drops);
+    }
+        printf("[LIVE CAPTURE] Pipeline processed: IDS=%lu MQTT=%lu\n",
+            pipeline.ids_processed,
+            pipeline.mqtt_processed);
+        printf("[LIVE CAPTURE] Queue high watermark: IDS=%lu MQTT=%lu\n",
+            pipeline.ids_queue_high_watermark,
+            pipeline.mqtt_queue_high_watermark);
+        printf("[LIVE CAPTURE] Queue depth at shutdown: IDS=%u MQTT=%u\n",
+                ids_depth_at_stop,
+                mqtt_depth_at_stop);
 
     // Get kernel drop stats
     struct pcap_stat ps;
@@ -524,6 +1395,9 @@ int live_capture_start(live_capture_ctx_t *ctx) {
 
     // Fill the pcap_stats_t for downstream reporting
     live_capture_fill_pcap_stats(ctx, &ctx->pcap_stats);
+
+    // Flush final snapshot for watch-based Grafana exporters
+    live_capture_write_metrics_snapshot(ctx);
 
     pcap_close(ctx->handle);
     ctx->handle = NULL;

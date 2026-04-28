@@ -18,11 +18,32 @@
 #include "dpi_engine.h"
 #include "rule_engine.h"
 #include "mqtt_parser.h"
+#include "mqtt_integration.h"
 #include "performance_metrics.h"
 #include "detailed_reports.h"
 #include "ids_reports.h"
 #include "mqtt_reports.h"
 #include "live_capture.h"
+
+static void live_ids_callback(void *rule_engine_ctx, const parsed_packet_t *packet) {
+    if (rule_engine_ctx && packet) {
+        rule_engine_analyze_packet((rule_engine_t *)rule_engine_ctx, packet);
+    }
+}
+
+static int live_ids_is_blocked(void *rule_engine_ctx, uint32_t ip_address) {
+    if (!rule_engine_ctx) {
+        return 0;
+    }
+    return is_ip_blocked((rule_engine_t *)rule_engine_ctx, ip_address);
+}
+
+static void live_mqtt_callback(void *mqtt_ctx, parsed_packet_t *packet) {
+    (void)mqtt_ctx;
+    if (packet) {
+        parse_mqtt_packet_secure(packet);
+    }
+}
 
 /* ========== Main Program ========== */
 
@@ -88,6 +109,7 @@ int main(int argc, char *argv[]) {
     }
     
     pcap_stats_t pcap_stats;
+    rule_engine_t *live_rule_engine = NULL;
     
     if (mode == CAPTURE_MODE_LIVE) {
         /* ========== LIVE CAPTURE MODE ========== */
@@ -103,6 +125,23 @@ int main(int argc, char *argv[]) {
             dpi_engine_destroy(dpi_engine);
             return 1;
         }
+
+        live_rule_engine = rule_engine_init();
+        if (!live_rule_engine) {
+            fprintf(stderr, "Failed to initialize rule engine for live mode\n");
+            live_capture_destroy(ctx);
+            dpi_engine_destroy(dpi_engine);
+            return 1;
+        }
+
+        // Enable real-time IDS + MQTT parsing in the capture loop.
+        ctx->ids_mode = 1;
+        ctx->rule_engine = live_rule_engine;
+        ctx->ids_callback = live_ids_callback;
+        ctx->ids_is_blocked_callback = live_ids_is_blocked;
+        ctx->mqtt_mode = 1;
+        ctx->mqtt_context = NULL;
+        ctx->mqtt_callback = live_mqtt_callback;
         
         printf("\n[LIVE MODE] Starting real-time capture with DPI analysis...\n\n");
         
@@ -112,6 +151,7 @@ int main(int argc, char *argv[]) {
         if (live_capture_start(ctx) != 0) {
             fprintf(stderr, "Live capture failed\n");
             live_capture_destroy(ctx);
+            rule_engine_destroy(live_rule_engine);
             dpi_engine_destroy(dpi_engine);
             return 1;
         }
@@ -159,11 +199,16 @@ int main(int argc, char *argv[]) {
         printf("📊 Ground Truth: NORMAL TRAFFIC (will calculate accuracy metrics)\n");
     }
     
-    rule_engine_t *rule_engine = rule_engine_init();
-    if (!rule_engine) {
-        fprintf(stderr, "Failed to initialize rule engine\n");
-        dpi_engine_destroy(dpi_engine);
-        return 1;
+    rule_engine_t *rule_engine = NULL;
+    if (mode == CAPTURE_MODE_LIVE) {
+        rule_engine = live_rule_engine;
+    } else {
+        rule_engine = rule_engine_init();
+        if (!rule_engine) {
+            fprintf(stderr, "Failed to initialize rule engine\n");
+            dpi_engine_destroy(dpi_engine);
+            return 1;
+        }
     }
     
     // Analyze ALL flows through rule engine (includes aggregate attack detection)

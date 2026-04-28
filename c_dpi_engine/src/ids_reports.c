@@ -12,18 +12,29 @@
 
 const char* get_attack_type_name(attack_type_t type) {
     switch(type) {
-        case ATTACK_SYN_FLOOD: return "SYN Flood";
-        case ATTACK_UDP_FLOOD: return "UDP Flood";
-        case ATTACK_HTTP_FLOOD: return "HTTP Flood";
-        case ATTACK_PING_OF_DEATH: return "Ping of Death";
-        case ATTACK_ARP_SPOOFING: return "ARP Spoofing";
-        case ATTACK_RUDY: return "RUDY (Slow POST)";
-        case ATTACK_TCP_SYN_SCAN: return "TCP SYN Scan";
-        case ATTACK_TCP_CONNECT_SCAN: return "TCP Connect Scan";
-        case ATTACK_UDP_SCAN: return "UDP Scan";
+        case ATTACK_SYN_FLOOD:         return "SYN Flood";
+        case ATTACK_UDP_FLOOD:         return "UDP Flood";
+        case ATTACK_HTTP_FLOOD:        return "HTTP Flood";
+        case ATTACK_ICMP_FLOOD:        return "ICMP Flood";
+        case ATTACK_DNS_AMPLIFICATION: return "DNS Amplification";
+        case ATTACK_NTP_AMPLIFICATION: return "NTP Amplification";
+        case ATTACK_SMURF:             return "Smurf Attack";
+        case ATTACK_FRAGGLE:           return "Fraggle Attack";
+        case ATTACK_PING_OF_DEATH:     return "Ping of Death";
+        case ATTACK_LAND_ATTACK:       return "Land Attack";
+        case ATTACK_TEARDROP:          return "Teardrop Attack";
+        case ATTACK_IP_SPOOFING:       return "IP Spoofing";
+        case ATTACK_TCP_SYN_SCAN:      return "TCP SYN Scan";
+        case ATTACK_TCP_CONNECT_SCAN:  return "TCP Connect Scan";
+        case ATTACK_UDP_SCAN:          return "UDP Scan";
+        case ATTACK_XMAS_SCAN:         return "Xmas Tree Scan";
+        case ATTACK_NULL_SCAN:         return "NULL Scan";
+        case ATTACK_FIN_SCAN:          return "FIN Scan";
         case ATTACK_PORT_SCAN_GENERIC: return "Port Scan";
-        case ATTACK_ICMP_FLOOD: return "ICMP Flood";
-        case ATTACK_MULTIPLE: return "Multiple Attacks";
+        case ATTACK_RUDY:              return "RUDY (Slow POST)";
+        case ATTACK_SLOWLORIS:         return "Slowloris";
+        case ATTACK_ARP_SPOOFING:      return "ARP Spoofing";
+        case ATTACK_MULTIPLE:          return "Multiple Attacks";
         default: return "Unknown";
     }
 }
@@ -70,17 +81,35 @@ void generate_ids_report(rule_engine_t *engine, dpi_engine_t *dpi_engine, const 
     fprintf(fp, "════════════════════════════════════════════════════════════════════════════════════════════════\n");
     fprintf(fp, " ATTACK TYPE BREAKDOWN\n");
     fprintf(fp, "════════════════════════════════════════════════════════════════════════════════════════════════\n");
-    fprintf(fp, "  %-25s : %lu\n", "SYN Flood Attacks", engine->attacks_by_type[ATTACK_SYN_FLOOD]);
-    fprintf(fp, "  %-25s : %lu\n", "UDP Flood Attacks", engine->attacks_by_type[ATTACK_UDP_FLOOD]);
-    fprintf(fp, "  %-25s : %lu\n", "HTTP Flood Attacks", engine->attacks_by_type[ATTACK_HTTP_FLOOD]);
-    fprintf(fp, "  %-25s : %lu\n", "ICMP Flood Attacks", engine->attacks_by_type[ATTACK_ICMP_FLOOD]);
-    fprintf(fp, "  %-25s : %lu\n", "Ping of Death", engine->attacks_by_type[ATTACK_PING_OF_DEATH]);
-    fprintf(fp, "  %-25s : %lu\n", "TCP SYN Scan", engine->attacks_by_type[ATTACK_TCP_SYN_SCAN]);
-    fprintf(fp, "  %-25s : %lu\n", "TCP Connect Scan", engine->attacks_by_type[ATTACK_TCP_CONNECT_SCAN]);
-    fprintf(fp, "  %-25s : %lu\n", "UDP Scan", engine->attacks_by_type[ATTACK_UDP_SCAN]);
-    fprintf(fp, "  %-25s : %lu\n", "Port Scans (Generic)", engine->attacks_by_type[ATTACK_PORT_SCAN_GENERIC]);
-    fprintf(fp, "  %-25s : %lu\n", "ARP Spoofing", engine->attacks_by_type[ATTACK_ARP_SPOOFING]);
-    fprintf(fp, "  %-25s : %lu\n", "RUDY (Slow POST)", engine->attacks_by_type[ATTACK_RUDY]);
+    /* --- Volumetric / Flooding --- */
+    fprintf(fp, "  %-25s : %lu\n", "SYN Flood Attacks",   engine->attacks_by_type[ATTACK_SYN_FLOOD]);
+    fprintf(fp, "  %-25s : %lu\n", "UDP Flood Attacks",   engine->attacks_by_type[ATTACK_UDP_FLOOD]);
+    fprintf(fp, "  %-25s : %lu\n", "HTTP Flood Attacks",  engine->attacks_by_type[ATTACK_HTTP_FLOOD]);
+    fprintf(fp, "  %-25s : %lu\n", "ICMP Flood Attacks",  engine->attacks_by_type[ATTACK_ICMP_FLOOD]);
+    fprintf(fp, "  %-25s : %lu\n", "DNS Amplification",   engine->attacks_by_type[ATTACK_DNS_AMPLIFICATION]);
+    fprintf(fp, "  %-25s : %lu\n", "NTP Amplification",   engine->attacks_by_type[ATTACK_NTP_AMPLIFICATION]);
+    fprintf(fp, "  %-25s : %lu\n", "Smurf Attack",        engine->attacks_by_type[ATTACK_SMURF]);
+    fprintf(fp, "  %-25s : %lu\n", "Fraggle Attack",      engine->attacks_by_type[ATTACK_FRAGGLE]);
+    fprintf(fp, "\n");
+    /* --- Protocol Exploitation --- */
+    fprintf(fp, "  %-25s : %lu\n", "Ping of Death",       engine->attacks_by_type[ATTACK_PING_OF_DEATH]);
+    fprintf(fp, "  %-25s : %lu\n", "Land Attack",         engine->attacks_by_type[ATTACK_LAND_ATTACK]);
+    fprintf(fp, "  %-25s : %lu\n", "Teardrop Attack",     engine->attacks_by_type[ATTACK_TEARDROP]);
+    fprintf(fp, "  %-25s : %lu\n", "IP Spoofing",         engine->attacks_by_type[ATTACK_IP_SPOOFING]);
+    fprintf(fp, "  %-25s : %lu\n", "ARP Spoofing",        engine->attacks_by_type[ATTACK_ARP_SPOOFING]);
+    fprintf(fp, "\n");
+    /* --- Scanning / Reconnaissance --- */
+    fprintf(fp, "  %-25s : %lu\n", "TCP SYN Scan",        engine->attacks_by_type[ATTACK_TCP_SYN_SCAN]);
+    fprintf(fp, "  %-25s : %lu\n", "TCP Connect Scan",    engine->attacks_by_type[ATTACK_TCP_CONNECT_SCAN]);
+    fprintf(fp, "  %-25s : %lu\n", "UDP Scan",            engine->attacks_by_type[ATTACK_UDP_SCAN]);
+    fprintf(fp, "  %-25s : %lu\n", "Xmas Tree Scan",      engine->attacks_by_type[ATTACK_XMAS_SCAN]);
+    fprintf(fp, "  %-25s : %lu\n", "NULL Scan",           engine->attacks_by_type[ATTACK_NULL_SCAN]);
+    fprintf(fp, "  %-25s : %lu\n", "FIN Scan",            engine->attacks_by_type[ATTACK_FIN_SCAN]);
+    fprintf(fp, "  %-25s : %lu\n", "Port Scans (Generic)",engine->attacks_by_type[ATTACK_PORT_SCAN_GENERIC]);
+    fprintf(fp, "\n");
+    /* --- Application Layer --- */
+    fprintf(fp, "  %-25s : %lu\n", "RUDY (Slow POST)",    engine->attacks_by_type[ATTACK_RUDY]);
+    fprintf(fp, "  %-25s : %lu\n", "Slowloris Attack",    engine->attacks_by_type[ATTACK_SLOWLORIS]);
     fprintf(fp, "\n");
     
     // ========== IP TRACKING SECTION ==========

@@ -12,6 +12,8 @@
 /* ========== Global Statistics ========== */
 static mqtt_statistics_t global_mqtt_stats = {0};
 
+#define MQTT_STAT_INC(field) __sync_fetch_and_add(&global_mqtt_stats.field, 1)
+
 /* ========== Helper Functions ========== */
 
 // Decode remaining length (variable length encoding)
@@ -119,7 +121,7 @@ static int parse_connect_packet(const uint8_t *payload, uint32_t payload_len, mq
         }
     }
     
-    global_mqtt_stats.connect_count++;
+    MQTT_STAT_INC(connect_count);
     return 0;
 }
 
@@ -149,7 +151,7 @@ static int parse_publish_packet(const uint8_t *payload, uint32_t payload_len, mq
         }
     }
     
-    global_mqtt_stats.publish_count++;
+    MQTT_STAT_INC(publish_count);
     return 0;
 }
 
@@ -176,7 +178,7 @@ static int parse_subscribe_packet(const uint8_t *payload, uint32_t payload_len, 
         packet->subscribe_count++;
     }
     
-    global_mqtt_stats.subscribe_count++;
+    MQTT_STAT_INC(subscribe_count);
     return 0;
 }
 
@@ -206,14 +208,14 @@ int mqtt_parse_packet(const uint8_t *data, uint32_t data_len, mqtt_packet_t *pac
     uint32_t bytes_consumed = 0;
     if (decode_remaining_length(&data[1], data_len - 1, &packet->remaining_length, &bytes_consumed) < 0) {
         strcpy(packet->error_message, "Invalid remaining length encoding");
-        global_mqtt_stats.malformed_packets++;
+        MQTT_STAT_INC(malformed_packets);
         return -1;
     }
     
     uint32_t header_len = 1 + bytes_consumed;
     if (header_len + packet->remaining_length > data_len) {
         strcpy(packet->error_message, "Packet length exceeds available data");
-        global_mqtt_stats.malformed_packets++;
+        MQTT_STAT_INC(malformed_packets);
         return -1;
     }
     
@@ -236,39 +238,39 @@ int mqtt_parse_packet(const uint8_t *data, uint32_t data_len, mqtt_packet_t *pac
             break;
             
         case MQTT_CONNACK:
-            global_mqtt_stats.connack_count++;
+            MQTT_STAT_INC(connack_count);
             break;
             
         case MQTT_PINGREQ:
-            global_mqtt_stats.pingreq_count++;
+            MQTT_STAT_INC(pingreq_count);
             break;
             
         case MQTT_PINGRESP:
-            global_mqtt_stats.pingresp_count++;
+            MQTT_STAT_INC(pingresp_count);
             break;
             
         case MQTT_DISCONNECT:
-            global_mqtt_stats.disconnect_count++;
+            MQTT_STAT_INC(disconnect_count);
             break;
             
         case MQTT_UNSUBSCRIBE:
-            global_mqtt_stats.unsubscribe_count++;
+            MQTT_STAT_INC(unsubscribe_count);
             break;
             
         default:
             snprintf(packet->error_message, sizeof(packet->error_message), 
                     "Unknown packet type: %d", packet->packet_type);
-            global_mqtt_stats.invalid_count++;
+            MQTT_STAT_INC(invalid_count);
             return -1;
     }
     
     if (parse_result < 0) {
-        global_mqtt_stats.malformed_packets++;
+        MQTT_STAT_INC(malformed_packets);
         return -1;
     }
     
     packet->is_valid = 1;
-    global_mqtt_stats.total_packets++;
+    MQTT_STAT_INC(total_packets);
     return 0;
 }
 
@@ -306,14 +308,14 @@ int mqtt_detect_anomalies(const mqtt_packet_t *packet, char *anomaly_desc, size_
         if (strstr(topic, "$(") || strstr(topic, "`") || strstr(topic, "../") || 
             strstr(topic, "..\\") || strstr(topic, "<script>")) {
             snprintf(anomaly_desc, desc_len, "Suspicious topic contains injection patterns: %s", topic);
-            global_mqtt_stats.suspicious_topics++;
+            MQTT_STAT_INC(suspicious_topics);
             return 1;
         }
         
         // Check for excessively long topics
         if (strlen(topic) > 200) {
             snprintf(anomaly_desc, desc_len, "Topic name too long: %zu bytes", strlen(topic));
-            global_mqtt_stats.suspicious_topics++;
+            MQTT_STAT_INC(suspicious_topics);
             return 1;
         }
     }
@@ -321,7 +323,7 @@ int mqtt_detect_anomalies(const mqtt_packet_t *packet, char *anomaly_desc, size_
     // Check for oversized payloads
     if (packet->packet_type == MQTT_PUBLISH && packet->payload_length > 1024*1024) {
         snprintf(anomaly_desc, desc_len, "PUBLISH payload too large: %u bytes", packet->payload_length);
-        global_mqtt_stats.oversized_packets++;
+        MQTT_STAT_INC(oversized_packets);
         return 1;
     }
     
@@ -420,12 +422,37 @@ void mqtt_print_packet(const mqtt_packet_t *packet) {
 
 void mqtt_get_statistics(mqtt_statistics_t *stats) {
     if (stats) {
-        memcpy(stats, &global_mqtt_stats, sizeof(mqtt_statistics_t));
+        memset(stats, 0, sizeof(*stats));
+        stats->total_packets = __atomic_load_n(&global_mqtt_stats.total_packets, __ATOMIC_RELAXED);
+        stats->connect_count = __atomic_load_n(&global_mqtt_stats.connect_count, __ATOMIC_RELAXED);
+        stats->connack_count = __atomic_load_n(&global_mqtt_stats.connack_count, __ATOMIC_RELAXED);
+        stats->publish_count = __atomic_load_n(&global_mqtt_stats.publish_count, __ATOMIC_RELAXED);
+        stats->subscribe_count = __atomic_load_n(&global_mqtt_stats.subscribe_count, __ATOMIC_RELAXED);
+        stats->unsubscribe_count = __atomic_load_n(&global_mqtt_stats.unsubscribe_count, __ATOMIC_RELAXED);
+        stats->pingreq_count = __atomic_load_n(&global_mqtt_stats.pingreq_count, __ATOMIC_RELAXED);
+        stats->pingresp_count = __atomic_load_n(&global_mqtt_stats.pingresp_count, __ATOMIC_RELAXED);
+        stats->disconnect_count = __atomic_load_n(&global_mqtt_stats.disconnect_count, __ATOMIC_RELAXED);
+        stats->invalid_count = __atomic_load_n(&global_mqtt_stats.invalid_count, __ATOMIC_RELAXED);
+        stats->malformed_packets = __atomic_load_n(&global_mqtt_stats.malformed_packets, __ATOMIC_RELAXED);
+        stats->oversized_packets = __atomic_load_n(&global_mqtt_stats.oversized_packets, __ATOMIC_RELAXED);
+        stats->suspicious_topics = __atomic_load_n(&global_mqtt_stats.suspicious_topics, __ATOMIC_RELAXED);
     }
 }
 
 void mqtt_reset_statistics(void) {
-    memset(&global_mqtt_stats, 0, sizeof(mqtt_statistics_t));
+    __atomic_store_n(&global_mqtt_stats.total_packets, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&global_mqtt_stats.connect_count, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&global_mqtt_stats.connack_count, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&global_mqtt_stats.publish_count, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&global_mqtt_stats.subscribe_count, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&global_mqtt_stats.unsubscribe_count, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&global_mqtt_stats.pingreq_count, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&global_mqtt_stats.pingresp_count, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&global_mqtt_stats.disconnect_count, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&global_mqtt_stats.invalid_count, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&global_mqtt_stats.malformed_packets, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&global_mqtt_stats.oversized_packets, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&global_mqtt_stats.suspicious_topics, 0, __ATOMIC_RELAXED);
 }
 
 void mqtt_parser_cleanup(void) {

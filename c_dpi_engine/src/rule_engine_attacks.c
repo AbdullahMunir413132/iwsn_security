@@ -18,17 +18,43 @@ int detect_syn_flood(rule_engine_t *engine, const flow_stats_t *flow,
     double duration = (flow->last_seen.tv_sec - flow->first_seen.tv_sec) +
                      (flow->last_seen.tv_usec - flow->first_seen.tv_usec) / 1000000.0;
     if (duration < 0.1) duration = 0.1;
-    
-    double syn_rate = (double)flow->syn_count / duration;
-    double syn_ack_ratio = 0.0;
-    if (flow->ack_count > 0) {
-        syn_ack_ratio = (double)flow->syn_count / (double)flow->ack_count;
-    } else if (flow->syn_count > 0) {
-        syn_ack_ratio = 999.0;
-    }
-    
-    if (syn_rate > engine->thresholds.syn_flood_threshold &&
-        syn_ack_ratio > engine->thresholds.syn_flood_ratio) {
+
+    /*
+     * RFC 4987 §3 — Stateful half-open tracking
+     *
+     * A SYN flood fills the server's SYN backlog by sending SYN packets that
+     * never complete the three-way handshake.  The canonical indicator is an
+     * accumulation of *half-open* connections:
+     *
+     *   half_open = syn_count - syn_ack_count
+     *
+     * syn_ack_count counts the SYN+ACK replies seen in this flow
+     * (tracked by update_flow_stats() in dpi_engine_flow.c).  When the ratio
+     * of unanswered SYNs exceeds the threshold the backlog is under pressure.
+     *
+     * This is strictly more accurate than comparing SYN count to bare ACK
+     * count, which over-fires on normal bidirectional TCP connections where
+     * the ACK flag is present on every segment after the handshake.
+     */
+    uint32_t half_open = (flow->syn_count > flow->syn_ack_count)
+                         ? (flow->syn_count - flow->syn_ack_count)
+                         : 0;
+
+    double syn_rate     = (double)flow->syn_count  / duration;
+
+    /* Require BOTH: a high raw SYN rate AND a significant half-open ratio.
+     * The half-open ratio guards against false-positives from normal
+     * bi-directional traffic captured on the wire (where SYN-ACK replies
+     * may belong to a different direction of the same flow). */
+    double half_open_ratio = (flow->syn_count > 0)
+                             ? (double)half_open / (double)flow->syn_count
+                             : 0.0;
+
+    if (syn_rate       > engine->thresholds.syn_flood_threshold &&
+        half_open_ratio > (1.0 - 1.0 / engine->thresholds.syn_flood_ratio) &&
+        half_open       >= 5) {   /* RFC 4987: require at least 5 absolute half-open
+                                   * connections to suppress transient false positives
+                                   * from short initial handshake delays */
         
         memset(detection, 0, sizeof(attack_detection_t));
         detection->attack_type = ATTACK_SYN_FLOOD;
@@ -37,8 +63,10 @@ int detect_syn_flood(rule_engine_t *engine, const flow_stats_t *flow,
         strncpy(detection->rfc_reference, "RFC 4987, RFC 793", sizeof(detection->rfc_reference)-1);
         
         snprintf(detection->description, sizeof(detection->description),
-                "SYN flood per RFC 4987: %.2f SYN/sec, SYN:ACK ratio %.2f:1 (threshold: %u/s, ratio %.1f)",
-                syn_rate, syn_ack_ratio, engine->thresholds.syn_flood_threshold, engine->thresholds.syn_flood_ratio);
+                "SYN flood per RFC 4987: %.1f SYN/s, %u half-open (%.0f%% incomplete) "
+                "over %.2fs [threshold: %u/s]",
+                syn_rate, half_open, half_open_ratio * 100.0, duration,
+                engine->thresholds.syn_flood_threshold);
         
         detection->attacker_ip = flow->src_ip;  detection->target_ip = flow->dst_ip;
         detection->src_port = flow->src_port;    detection->dst_port = flow->dst_port;
@@ -46,12 +74,13 @@ int detect_syn_flood(rule_engine_t *engine, const flow_stats_t *flow,
         detection->packet_count = flow->syn_count; detection->byte_count = flow->total_bytes;
         detection->packets_per_second = syn_rate;  detection->duration_seconds = duration;
         detection->detection_time = flow->last_seen;
-        detection->confidence_score = fmin(1.0, 
-            (syn_rate / (engine->thresholds.syn_flood_threshold * 2.0)) * 
-            (syn_ack_ratio / (engine->thresholds.syn_flood_ratio * 2.0)));
+        detection->confidence_score = fmin(1.0, half_open_ratio *
+            (syn_rate / (engine->thresholds.syn_flood_threshold * 2.0)));
         
         snprintf(detection->details, sizeof(detection->details),
-                "SYN:%u ACK:%u Attempts:%u Duration:%.2fs", flow->syn_count, flow->ack_count, flow->connection_attempts, duration);
+                "SYN:%u SYN-ACK:%u HalfOpen:%u ACK:%u Duration:%.2fs",
+                flow->syn_count, flow->syn_ack_count, half_open,
+                flow->ack_count, duration);
         return 1;
     }
     return 0;
@@ -131,7 +160,14 @@ void detect_aggregate_syn_flood(rule_engine_t *engine, const dpi_engine_t *dpi_e
         if (dur < 0.1) dur = 0.1;
         double sr = (double)targets[i].total_syn_count / dur;
         double sor = (double)targets[i].syn_only_flows / (double)targets[i].flow_count;
-        if ((sr > 20.0 && targets[i].flow_count > 10) || (targets[i].syn_only_flows > 15 && sor > 0.7)) {
+        /* Bug fix: was hardcoded 20.0 and 15 — now driven by engine thresholds.
+         * Aggregate threshold = 40 % of the per-flow threshold because a
+         * distributed flood spreads SYNs across multiple source IPs (each
+         * contributing fewer packets per flow), so the per-target aggregate
+         * rate is the correct detection surface. */
+        double agg_threshold = (double)engine->thresholds.syn_flood_threshold * 0.4;
+        uint32_t min_syn_only = 5;  /* 4-node IWSN: >5 SYN-only flows is already DDoS */
+        if ((sr > agg_threshold && targets[i].flow_count > 5) || (targets[i].syn_only_flows > min_syn_only && sor > 0.7)) {
             attack_detection_t det; memset(&det, 0, sizeof(det));
             det.attack_type = ATTACK_SYN_FLOOD; det.severity = SEVERITY_HIGH;
             strcpy(det.attack_name, "Distributed SYN Flood");
@@ -157,18 +193,43 @@ int detect_udp_flood(rule_engine_t *engine, const flow_stats_t *flow, attack_det
     double duration = (flow->last_seen.tv_sec - flow->first_seen.tv_sec) + (flow->last_seen.tv_usec - flow->first_seen.tv_usec)/1e6;
     if (duration < 0.1) duration = 0.1;
     double rate = (double)flow->total_packets / duration;
-    if (rate > engine->thresholds.udp_flood_threshold && flow->total_packets > engine->thresholds.udp_flood_packet_count) {
+
+    /*
+     * IWSN-aware UDP flood discrimination (RFC 4732 §2.1)
+     *
+     * False-positive guard: MQTT runs over TCP, but other sensor protocols
+     * (CoAP on UDP/5683, custom sensor payloads) produce short UDP bursts on
+     * a FIXED destination port.  A genuine UDP flood aims to exhaust bandwidth
+     * and typically scatters packets across MANY destination ports.
+     *
+     * Rule: only flag as a flood if the flow ALSO shows port diversity
+     * (unique_dst_port_count > 5).  A single-port sensor burst — even at
+     * high PPS — is not a volumetric flood, it is sensor data.
+     */
+    int is_port_diverse = (flow->unique_dst_port_count > 5);
+
+    if (rate > engine->thresholds.udp_flood_threshold &&
+        flow->total_packets > engine->thresholds.udp_flood_packet_count &&
+        is_port_diverse) {
         memset(detection, 0, sizeof(attack_detection_t));
         detection->attack_type = ATTACK_UDP_FLOOD; detection->severity = SEVERITY_HIGH;
         strcpy(detection->attack_name, "UDP Flood Attack");
         strncpy(detection->rfc_reference, "RFC 768, RFC 4732", sizeof(detection->rfc_reference)-1);
-        snprintf(detection->description, sizeof(detection->description), "UDP flood per RFC 4732: %.2f pkt/s (threshold: %u)", rate, engine->thresholds.udp_flood_threshold);
+        snprintf(detection->description, sizeof(detection->description),
+                "UDP flood per RFC 4732: %.1f pkt/s across %u ports "
+                "(IWSN threshold: %u pps, min pkts: %u)",
+                rate, flow->unique_dst_port_count,
+                engine->thresholds.udp_flood_threshold,
+                engine->thresholds.udp_flood_packet_count);
         detection->attacker_ip = flow->src_ip; detection->target_ip = flow->dst_ip;
         detection->src_port = flow->src_port; detection->dst_port = flow->dst_port; detection->protocol = flow->protocol;
         detection->packet_count = flow->total_packets; detection->byte_count = flow->total_bytes;
         detection->packets_per_second = rate; detection->duration_seconds = duration; detection->detection_time = flow->last_seen;
         detection->confidence_score = fmin(1.0, rate / (engine->thresholds.udp_flood_threshold * 2.0));
-        snprintf(detection->details, sizeof(detection->details), "Packets:%lu Bytes:%lu Rate:%.2f Duration:%.2fs", flow->total_packets, flow->total_bytes, rate, duration);
+        snprintf(detection->details, sizeof(detection->details),
+                "Packets:%lu Bytes:%lu Rate:%.1f UniqPorts:%u Duration:%.2fs",
+                flow->total_packets, flow->total_bytes, rate,
+                flow->unique_dst_port_count, duration);
         return 1;
     }
     return 0;
@@ -176,8 +237,22 @@ int detect_udp_flood(rule_engine_t *engine, const flow_stats_t *flow, attack_det
 
 /* ========== HTTP Flood Detection (RFC 9110) ========== */
 int detect_http_flood(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection) {
-    int is_http = (flow->dst_port == 80 || flow->dst_port == 8080 || strstr(flow->protocol_name, "HTTP") != NULL);
+    /*
+     * IWSN-aware HTTP flood detection (RFC 9110 §9.3.1)
+     *
+     * Port guard: IWSN controller runs on port 8765, not 80/8080.  Include
+     * it alongside standard HTTP ports.  All three are TCP.
+     *
+     * Minimum packet count guard: Without it a 2-packet burst sampled over
+     * a 0.1 s floor produces rate = 20 pps which exceeds threshold = 30.
+     * Require at least 5 HTTP packets so the rate is measured over a
+     * meaningful window (5 / 30 = 167 ms minimum before triggering).
+     */
+    int is_http = (flow->dst_port == 80 || flow->dst_port == 8080 ||
+                   flow->dst_port == 8765 ||
+                   strstr(flow->protocol_name, "HTTP") != NULL);
     if (!is_http || flow->protocol != IPPROTO_TCP) return 0;
+    if (flow->total_packets < 5) return 0;
     double duration = (flow->last_seen.tv_sec - flow->first_seen.tv_sec) + (flow->last_seen.tv_usec - flow->first_seen.tv_usec)/1e6;
     if (duration < 0.1) duration = 0.1;
     double rate = (double)flow->total_packets / duration;
@@ -204,7 +279,14 @@ int detect_icmp_flood(rule_engine_t *engine, const flow_stats_t *flow, attack_de
     double duration = (flow->last_seen.tv_sec - flow->first_seen.tv_sec) + (flow->last_seen.tv_usec - flow->first_seen.tv_usec)/1e6;
     if (duration < 0.1) duration = 0.1;
     double rate = (double)flow->total_packets / duration;
-    if (rate > engine->thresholds.icmp_flood_threshold) {
+
+    /* Bug fix: minimum absolute packet count guard.
+     * Without this, a 2-packet burst sampled at 0.1 s duration produces
+     * rate = 20 pps which would fire above a threshold of 15.  Require at
+     * least 10 ICMP packets so the measurement is over a statistically
+     * meaningful window (>=10 / 15 pps = 667 ms minimum before triggering). */
+    if (rate > engine->thresholds.icmp_flood_threshold &&
+        flow->total_packets >= 10) {
         memset(detection, 0, sizeof(attack_detection_t));
         detection->attack_type = ATTACK_ICMP_FLOOD; detection->severity = SEVERITY_HIGH;
         strcpy(detection->attack_name, "ICMP Flood Attack");
@@ -223,7 +305,14 @@ int detect_icmp_flood(rule_engine_t *engine, const flow_stats_t *flow, attack_de
 /* ========== Ping of Death Detection (RFC 791 §3.2) ========== */
 int detect_ping_of_death(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection) {
     if (flow->protocol != IPPROTO_ICMP) return 0;
-    if (flow->max_packet_size > engine->thresholds.pod_packet_size) {
+    /*
+     * RFC 791 §3.2: Maximum IP datagram total length is 65535 bytes.
+     * Ping of Death sends crafted ICMP fragments that when reassembled
+     * produce a datagram >= 65535 bytes, causing buffer overflow.
+     * Use >= operator: a 65535-byte ICMP packet is the exact RFC maximum
+     * and is always anomalous in an IWSN environment.
+     */
+    if (flow->max_packet_size >= engine->thresholds.pod_packet_size) {
         memset(detection, 0, sizeof(attack_detection_t));
         detection->attack_type = ATTACK_PING_OF_DEATH; detection->severity = SEVERITY_CRITICAL;
         strcpy(detection->attack_name, "Ping of Death");
@@ -270,8 +359,24 @@ int detect_arp_spoofing(rule_engine_t *engine, const flow_stats_t *flow, attack_
 
 /* ========== RUDY Slow POST (RFC 9110) ========== */
 int detect_rudy_attack(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection) {
-    int is_http = (flow->dst_port == 80 || flow->dst_port == 8080 || strstr(flow->protocol_name, "HTTP") != NULL);
-    if (!is_http || flow->protocol != IPPROTO_TCP || flow->total_packets < engine->thresholds.rudy_min_packets) return 0;
+    /*
+     * RUDY (R-U-Dead-Yet) — RFC 9110 §6.3 slow POST body.
+     *
+     * IWSN port guard: add port 8765 (IWSN controller).
+     * Connection guard: requires at least one established connection
+     * (3-way handshake completed); eliminates SYN-only or RST flows that
+     * share the same port but are not slow-POST sessions.
+     * Rate interpretation: avg_rate is bytes/s for the entire flow
+     * (headers + body). A real HTTP POST with a tiny body has a body rate
+     * of ~0-2 B/s after the initial header exchange.  The 10 B/s threshold
+     * is conservative enough to absorb header overhead.
+     */
+    int is_http = (flow->dst_port == 80 || flow->dst_port == 8080 ||
+                   flow->dst_port == 8765 ||
+                   strstr(flow->protocol_name, "HTTP") != NULL);
+    if (!is_http || flow->protocol != IPPROTO_TCP) return 0;
+    if (flow->total_packets < engine->thresholds.rudy_min_packets) return 0;
+    if (flow->established_connections == 0) return 0;  /* no completed handshake */
     double duration = (flow->last_seen.tv_sec - flow->first_seen.tv_sec) + (flow->last_seen.tv_usec - flow->first_seen.tv_usec)/1e6;
     if (duration < 1.0) return 0;
     double avg_rate = (double)flow->total_bytes / duration;
@@ -294,8 +399,12 @@ int detect_rudy_attack(rule_engine_t *engine, const flow_stats_t *flow, attack_d
 /* ========== TCP SYN Scan (RFC 793) ========== */
 int detect_tcp_syn_scan(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection) {
     if (flow->protocol != IPPROTO_TCP) return 0;
+    /* Bug fix: was using tcp_connect_scan_ports (connect-scan threshold) for
+     * SYN scan detection.  SYN scan produces SYNs + RSTs but no completed
+     * handshakes.  Use port_scan_unique_ports (the generic scan threshold)
+     * which is calibrated to the IWSN's 8-port detection floor. */
     if (flow->syn_count > 5 && flow->rst_count > 0 && flow->ack_count < (flow->syn_count * 0.3)) {
-        if (flow->unique_dst_port_count >= engine->thresholds.tcp_connect_scan_ports) {
+        if (flow->unique_dst_port_count >= engine->thresholds.port_scan_unique_ports) {
             memset(detection, 0, sizeof(attack_detection_t));
             detection->attack_type = ATTACK_TCP_SYN_SCAN; detection->severity = SEVERITY_MEDIUM;
             strcpy(detection->attack_name, "TCP SYN Scan");
@@ -316,7 +425,30 @@ int detect_tcp_syn_scan(rule_engine_t *engine, const flow_stats_t *flow, attack_
 int detect_tcp_connect_scan(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection) {
     if (flow->protocol != IPPROTO_TCP) return 0;
     if (flow->unique_dst_port_count >= engine->thresholds.tcp_connect_scan_ports) {
-        double cr = flow->syn_count > 0 ? (double)flow->ack_count / (double)flow->syn_count : 0;
+        /*
+         * Bug fix: the original ratio  ack_count / syn_count > 0.8  is wrong.
+         *
+         * In any TCP flow, ack_count >> syn_count because every packet after
+         * the initial SYN carries the ACK flag (SYN-ACK, data, FIN-ACK).
+         * Computing ack_count/syn_count always yields a ratio >> 1.0,
+         * making it useless as a completion test.
+         *
+         * Correct RFC 793 §3.9 model:
+         *  - Connect scan: scanner completes the 3-way handshake by sending
+         *    an ACK after each SYN-ACK.  syn_ack_count tracks server SYN-ACKs
+         *    (bidirectional flow).  If (ack_count - syn_ack_count) is large,
+         *    the scanner is contributing its own ACKs, i.e. it is completing
+         *    handshakes (connect scan).
+         *  - SYN scan: scanner sends RST immediately after SYN-ACK; it never
+         *    contributes its own ACKs so (ack_count - syn_ack_count) ≈ 0.
+         *
+         * scanner_acks = ack_count - syn_ack_count (server responses subtracted).
+         * cr = scanner_acks / syn_count: fraction of probed ports where the
+         * scanner sent a completing ACK.  threshold = tcp_connect_scan_completion.
+         */
+        int scanner_acks = (int)flow->ack_count - (int)flow->syn_ack_count;
+        if (scanner_acks < 0) scanner_acks = 0;
+        double cr = flow->syn_count > 0 ? (double)scanner_acks / (double)flow->syn_count : 0;
         if (cr > engine->thresholds.tcp_connect_scan_completion) {
             memset(detection, 0, sizeof(attack_detection_t));
             detection->attack_type = ATTACK_TCP_CONNECT_SCAN; detection->severity = SEVERITY_MEDIUM;
@@ -339,7 +471,10 @@ int detect_udp_scan(rule_engine_t *engine, const flow_stats_t *flow, attack_dete
     if (flow->protocol != IPPROTO_UDP) return 0;
     if (flow->unique_dst_port_count >= engine->thresholds.port_scan_unique_ports) {
         uint64_t avg_sz = flow->total_packets > 0 ? flow->total_packet_size / flow->total_packets : 0;
-        if (avg_sz < 100) {
+        /* Bug fix: add minimum packet count guard (same rationale as ICMP flood).
+         * A 2-packet sample hitting 8 ports over 0.5 s is noise, not a scan.
+         * Require at least 8 packets (one per threshold port) before firing. */
+        if (avg_sz < 100 && flow->total_packets >= engine->thresholds.port_scan_unique_ports) {
             memset(detection, 0, sizeof(attack_detection_t));
             detection->attack_type = ATTACK_UDP_SCAN; detection->severity = SEVERITY_MEDIUM;
             strcpy(detection->attack_name, "UDP Scan");

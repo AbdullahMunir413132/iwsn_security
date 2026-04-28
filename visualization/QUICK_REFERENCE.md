@@ -22,7 +22,7 @@ cd visualization && ./run_analysis_with_html.sh ../scripts/attack_samples/syn_fl
 
 ### Output file:
 ```
-c_dpi_engine/analysis_report.html
+reports/analysis_report.html
 ```
 
 ---
@@ -57,7 +57,7 @@ cd ../visualization
 python3 generate_html_dashboard.py ../c_dpi_engine
 
 # 3. Open in browser
-xdg-open ../c_dpi_engine/analysis_report.html
+xdg-open reports/analysis_report.html
 ```
 cd visualization/grafana
 
@@ -123,9 +123,9 @@ python3 push_metrics.py ../../c_dpi_engine
 
 **Problem:** Browser doesn't open automatically
 ```bash
-xdg-open ../c_dpi_engine/analysis_report.html
+xdg-open reports/analysis_report.html
 # Or
-firefox ../c_dpi_engine/analysis_report.html
+firefox reports/analysis_report.html
 ```
 
 **Problem:** No data displayed in dashboard
@@ -193,7 +193,7 @@ After analysis, check these files in `c_dpi_engine/`:
 ```bash
 ls -lh ../c_dpi_engine/
 # Should show:
-- analysis_report.html          # Interactive HTML dashboard
+- reports/analysis_report.html  # Interactive HTML dashboard
 - performance_metrics.txt       # Detailed metrics
 - dpi_detailed_report.txt       # Flow-by-flow analysis
 - ids_detailed_report.txt       # Attack detection details

@@ -5,9 +5,9 @@
 #
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DPI_ENGINE="$PROJECT_ROOT/c_dpi_engine"
-GRAFANA_DIR="$SCRIPT_DIR"
+HTML_DIR="$SCRIPT_DIR"
 
 # Colors
 GREEN='\033[0;32m'
@@ -65,7 +65,7 @@ echo ""
 
 # Generate HTML dashboard
 print_info "Generating HTML dashboard..."
-cd "$GRAFANA_DIR"
+cd "$HTML_DIR"
 python3 generate_html_dashboard.py "$DPI_ENGINE"
 DASHBOARD_EXIT_CODE=$?
 
@@ -75,11 +75,11 @@ if [ $DASHBOARD_EXIT_CODE -eq 0 ]; then
     echo "╔════════════════════════════════════════════════════════════════╗"
     echo "║              📊 HTML DASHBOARD READY                           ║"
     echo "╠════════════════════════════════════════════════════════════════╣"
-    echo "║  Dashboard: c_dpi_engine/analysis_report.html                  ║"
+    echo "║  Dashboard: visualization/reports/analysis_report.html         ║"
     echo "║  (Should open automatically in browser)                        ║"
     echo "║                                                                ║"
     echo "║  To manually open:                                             ║"
-    echo "║    xdg-open c_dpi_engine/analysis_report.html                  ║"
+    echo "║    xdg-open visualization/reports/analysis_report.html         ║"
     echo "╚════════════════════════════════════════════════════════════════╝"
 else
     echo "Error: Failed to generate dashboard"

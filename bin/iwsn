@@ -1,0 +1,341 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENGINE_DIR="$PROJECT_ROOT/c_dpi_engine"
+HTML_RUNNER="$PROJECT_ROOT/visualization/html/run_analysis_with_html.sh"
+LIVE_RUNNER="$PROJECT_ROOT/visualization/grafana/live_capture_grafana.sh"
+LIVE_BENCHMARK_RUNNER="$PROJECT_ROOT/scripts/benchmark_live_pipeline.sh"
+GRAFANA_DIR="$PROJECT_ROOT/visualization/grafana"
+PUSH_METRICS="$PROJECT_ROOT/visualization/grafana/push_metrics.py"
+MQTT_SENSOR_BRIDGE="$PROJECT_ROOT/scripts/mqtt_sensor_bridge.py"
+# Canonical OVS setup script (supports per-node DPID for physical multi-node deployment)
+OVS_SETUP_RUNNER="$PROJECT_ROOT/setup_node_ovs.sh"
+NODE_PID_FILE="$PROJECT_ROOT/.node.pid"
+
+usage() {
+    cat <<'USAGE'
+IWSN single launcher
+
+Usage:
+  ./bin/iwsn <command> [args]
+
+── Physical node commands (headless, no prompts) ─────────────────────────────
+  node-start  --server-ip <IP> --node-num <1-4> --iface <IFACE>
+              [--no-grafana]
+              [--influx-url <URL>] [--influx-token <TOKEN>]
+
+              Start node-side daemons in the background:
+                1. DPI live capture + Grafana metrics pipeline (sudo)
+              Writes PIDs to .node.pid for clean shutdown.
+              OVS reports telemetry to ODL natively via OpenFlow (port 6653).
+
+  node-stop   Kill all daemons started by node-start (reads .node.pid).
+
+  node-status Show running state of all node daemons.
+
+  ovs-setup-node  <server_ip> <of_port> <iface> <node_num>
+              Configure OVS br0 with deterministic DPID for multi-node deployment.
+              Example: ./bin/iwsn ovs-setup-node 192.168.1.10 6653 wlan0 2
+
+── Interactive / development commands ───────────────────────────────────────
+  build                     Build C analyzers
+  analyze <pcap>            Run DPI + IDS + MQTT analyzer on a PCAP
+  html <pcap>               Run analysis and generate HTML dashboard
+  live                      Start live capture + Grafana (DPI → InfluxDB → Grafana)
+  ovs-setup <ip> [port] [iface]
+                            Configure Open vSwitch br0 for ODL (interactive)
+  benchmark-live [iface] [duration] [filter]
+                            Run live multithread benchmark matrix
+  grafana-up                Start InfluxDB + Grafana stack
+  grafana-down              Stop InfluxDB + Grafana stack
+  grafana-logs              Tail Grafana stack logs
+  clean                     Remove generated artifacts and caches
+  help                      Show this help
+
+Environment overrides:
+  INFLUX_URL  INFLUX_TOKEN
+USAGE
+}
+
+need_arg() {
+    if [[ $# -lt 1 ]]; then
+        echo "Missing required argument." >&2
+        usage
+        exit 1
+    fi
+}
+
+cmd_build() {
+    make -C "$ENGINE_DIR" clean && make -C "$ENGINE_DIR" all
+}
+
+cmd_analyze() {
+    need_arg "$@"
+    local pcap="$1"
+    "$ENGINE_DIR/bin/dpi_mqtt_analyzer" "$pcap"
+
+    # After PCAP analysis, push MQTT sensor values to InfluxDB (if available)
+    local mqtt_report="$ENGINE_DIR/mqtt_packets_detailed.txt"
+    if [[ -f "$mqtt_report" && -f "$MQTT_SENSOR_BRIDGE" ]]; then
+        # Prefer venv python; fall back to system python3
+        local venv_py
+        venv_py="$(cd "$PROJECT_ROOT/.." && echo "$PWD")/.venv/bin/python3"
+        local py_bin="python3"
+        if [[ -x "$venv_py" ]]; then
+            py_bin="$venv_py"
+        fi
+
+        echo ""
+        echo "[iwsn] Extracting MQTT sensor values from PCAP analysis → InfluxDB…"
+        "$py_bin" "$MQTT_SENSOR_BRIDGE" \
+            --pcap-source "$mqtt_report" \
+            --influx-url   "${INFLUX_URL:-http://127.0.0.1:8086}" \
+            --influx-token "${INFLUX_TOKEN:-iwsn-security-influxdb-token}" \
+            || true   # non-fatal: DPI output already saved regardless
+    fi
+}
+
+cmd_html() {
+    need_arg "$@"
+    local pcap="$1"
+    "$HTML_RUNNER" "$pcap"
+}
+
+cmd_live() {
+    echo ""
+    echo "[iwsn] Launching DPI capture → InfluxDB → Grafana pipeline…"
+    echo "       OVS reports telemetry to ODL natively via OpenFlow (port 6653)."
+    echo ""
+    if [[ ${EUID:-0} -ne 0 ]]; then
+        exec sudo "$LIVE_RUNNER"
+    fi
+    exec "$LIVE_RUNNER"
+}
+
+cmd_ovs_setup() {
+    # Legacy: interactive OVS setup without DPID (single-node or dev use)
+    need_arg "$@"
+    local controller_ip="$1"
+    local controller_port="${2:-6633}"
+    local iface="${3:-eth0}"
+
+    if [[ ${EUID:-0} -ne 0 ]]; then
+        exec sudo bash "$OVS_SETUP_RUNNER" "$controller_ip" "$controller_port" "$iface" "1"
+    fi
+    exec bash "$OVS_SETUP_RUNNER" "$controller_ip" "$controller_port" "$iface" "1"
+}
+
+cmd_ovs_setup_node() {
+    # Multi-node physical deployment: sets deterministic DPID so ODL sees openflow:N
+    if [[ $# -lt 4 ]]; then
+        echo "Usage: ./bin/iwsn ovs-setup-node <server_ip> <of_port> <iface> <node_num>" >&2
+        echo "  node_num: 1-4  (determines openflow:N identity in ODL)" >&2
+        exit 1
+    fi
+    if [[ ${EUID:-0} -ne 0 ]]; then
+        exec sudo bash "$OVS_SETUP_RUNNER" "$@"
+    fi
+    exec bash "$OVS_SETUP_RUNNER" "$@"
+}
+
+cmd_node_start() {
+    # ── Parse arguments ───────────────────────────────────────────────────────
+    local server_ip=""
+    local node_num=""
+    local iface=""
+    local enable_grafana=1
+    local influx_url="${INFLUX_URL:-http://127.0.0.1:8086}"
+    local influx_token="${INFLUX_TOKEN:-}"
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --server-ip)    server_ip="$2";   shift 2 ;;
+            --node-num)     node_num="$2";    shift 2 ;;
+            --iface)        iface="$2";       shift 2 ;;
+            --no-grafana)   enable_grafana=0; shift ;;
+            --influx-url)   influx_url="$2";  shift 2 ;;
+            --influx-token) influx_token="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
+        esac
+    done
+
+    if [[ -z "$server_ip" || -z "$node_num" || -z "$iface" ]]; then
+        echo "[ERROR] --server-ip, --node-num, and --iface are required." >&2
+        echo "  Example: ./bin/iwsn node-start --server-ip 192.168.1.10 --node-num 2 --iface wlan0" >&2
+        exit 1
+    fi
+
+    if [[ ! "$node_num" =~ ^[1-4]$ ]]; then
+        echo "[ERROR] --node-num must be 1, 2, 3, or 4. Got: $node_num" >&2
+        exit 1
+    fi
+
+    local node_id="iwsn-node-0${node_num}"
+    local openflow_id="openflow:${node_num}"
+
+    # ── Validate prerequisites ─────────────────────────────────────────────────
+    if ! ovs-vsctl br-exists br0 &>/dev/null 2>&1; then
+        echo "[WARN] OVS bridge br0 not found. Run OVS setup first:"
+        echo "  ./bin/iwsn ovs-setup-node ${server_ip} 6653 ${iface} ${node_num}"
+        echo "  (OVS reports telemetry to ODL at tcp:${server_ip}:6653 via OpenFlow)"
+    fi
+
+    # Clean up any stale PID file
+    if [[ -f "$NODE_PID_FILE" ]]; then
+        echo "[*] Found existing .node.pid – stopping previous daemons first..."
+        cmd_node_stop || true
+    fi
+
+    echo "════════════════════════════════════════════════════════════"
+    echo "  IWSN Node-Start (headless)"
+    echo "  Node ID   : $node_id"
+    echo "  OpenFlow  : $openflow_id  (OVS → ODL via OpenFlow, port 6653)"
+    echo "  Interface : $iface"
+    echo "════════════════════════════════════════════════════════════"
+    echo ""
+
+    local pids=()
+
+    # ── Process 1: DPI live capture + Grafana metrics push ────────────────────
+    if [[ $enable_grafana -eq 1 ]]; then
+        if [[ ! -f "$PROJECT_ROOT/c_dpi_engine/bin/dpi_mqtt_analyzer" ]]; then
+            echo "[WARN] DPI engine not built. Skipping Grafana pipeline."
+            echo "       Build first: ./bin/iwsn build"
+        else
+            echo "[*] Starting DPI + Grafana pipeline (sudo required for pcap)..."
+            local grafana_log="$PROJECT_ROOT/../.node-grafana.log"
+            sudo -E bash "$LIVE_RUNNER" > "$grafana_log" 2>&1 &
+            local gpid=$!
+            pids+=("grafana:$gpid")
+            echo "    PID $gpid  log: $grafana_log"
+        fi
+    fi
+
+    # ── Write PID file ─────────────────────────────────────────────────────────
+    printf '%s\n' "${pids[@]}" > "$NODE_PID_FILE"
+    echo ""
+    echo "[+] Node daemons started. PID file: $NODE_PID_FILE"
+    echo "    To stop:  ./bin/iwsn node-stop"
+    echo "    Status:   ./bin/iwsn node-status"
+}
+
+cmd_node_stop() {
+    if [[ ! -f "$NODE_PID_FILE" ]]; then
+        echo "[INFO] No .node.pid file found. Nothing to stop."
+        pkill -f 'live_capture_grafana.sh' 2>/dev/null || true
+        return 0
+    fi
+
+    echo "[*] Stopping node daemons from $NODE_PID_FILE ..."
+    while IFS=: read -r name pid; do
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+            echo "    Stopped $name (PID $pid)"
+        else
+            echo "    $name (PID $pid) was not running"
+        fi
+    done < "$NODE_PID_FILE"
+
+    rm -f "$NODE_PID_FILE"
+    echo "[+] Node daemons stopped."
+}
+
+cmd_node_status() {
+    echo "IWSN Node Process Status"
+    echo "────────────────────────"
+    if [[ -f "$NODE_PID_FILE" ]]; then
+        while IFS=: read -r name pid; do
+            if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+                echo "  [RUNNING] $name  (PID $pid)"
+            else
+                echo "  [STOPPED] $name  (PID $pid – not found)"
+            fi
+        done < "$NODE_PID_FILE"
+    else
+        echo "  No .node.pid file found."
+        echo "  Checking by process name:"
+        for proc in live_capture_grafana.sh; do
+            if pgrep -f "$proc" &>/dev/null; then
+                echo "    [RUNNING] $proc  PID=$(pgrep -f "$proc" | tr '\n' ' ')"
+            else
+                echo "    [STOPPED] $proc"
+            fi
+        done
+    fi
+}
+
+cmd_benchmark_live() {
+    "$LIVE_BENCHMARK_RUNNER" "$@"
+}
+
+cmd_grafana_up() {
+    (cd "$GRAFANA_DIR" && docker compose up -d)
+}
+
+cmd_grafana_down() {
+    (cd "$GRAFANA_DIR" && docker compose down)
+}
+
+cmd_grafana_logs() {
+    (cd "$GRAFANA_DIR" && docker compose logs -f)
+}
+
+cmd_clean() {
+    rm -rf "$PROJECT_ROOT/c_dpi_engine/obj"
+    rm -rf "$PROJECT_ROOT/c_dpi_engine/bin"
+    rm -f "$PROJECT_ROOT/c_dpi_engine"/performance_metrics.txt
+    rm -f "$PROJECT_ROOT/c_dpi_engine"/dpi_detailed_report.txt
+    rm -f "$PROJECT_ROOT/c_dpi_engine"/ids_detailed_report.txt
+    rm -f "$PROJECT_ROOT/c_dpi_engine"/dpi_flows_detailed.txt
+    rm -f "$PROJECT_ROOT/c_dpi_engine"/mqtt_packets_detailed.txt
+    rm -f "$PROJECT_ROOT/c_dpi_engine"/live_realtime_metrics.txt
+    rm -f "$PROJECT_ROOT"/performance_metrics.txt
+    rm -f "$PROJECT_ROOT"/dpi_detailed_report.txt
+    rm -f "$PROJECT_ROOT"/ids_detailed_report.txt
+    rm -f "$PROJECT_ROOT"/dpi_flows_detailed.txt
+    rm -f "$PROJECT_ROOT"/mqtt_packets_detailed.txt
+    rm -f "$PROJECT_ROOT"/live_realtime_metrics.txt
+    rm -f "$PROJECT_ROOT/visualization/reports"/*.html
+    rm -f "$PROJECT_ROOT/visualization/reports"/*.txt
+    rm -f "$PROJECT_ROOT"/*.log
+    rm -f "$PROJECT_ROOT"/summary.csv
+    rm -f "$PROJECT_ROOT"/scored_summary.csv
+    rm -f "$PROJECT_ROOT"/recommendation.txt
+    find "$PROJECT_ROOT" -type d \( -name __pycache__ -o -name .pytest_cache \) -prune -exec rm -rf {} +
+    find "$PROJECT_ROOT" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
+    mkdir -p "$PROJECT_ROOT/visualization/reports"
+    touch "$PROJECT_ROOT/visualization/reports/.gitkeep"
+    echo "Cleanup complete."
+}
+
+main() {
+    local cmd="${1:-help}"
+    shift || true
+
+    case "$cmd" in
+        node-start)      cmd_node_start "$@" ;;
+        node-stop)       cmd_node_stop "$@" ;;
+        node-status)     cmd_node_status "$@" ;;
+        ovs-setup-node)  cmd_ovs_setup_node "$@" ;;
+        build)           cmd_build "$@" ;;
+        analyze)         cmd_analyze "$@" ;;
+        html)            cmd_html "$@" ;;
+        live)            cmd_live "$@" ;;
+        ovs-setup)       cmd_ovs_setup "$@" ;;
+        benchmark-live)  cmd_benchmark_live "$@" ;;
+        grafana-up)      cmd_grafana_up "$@" ;;
+        grafana-down)    cmd_grafana_down "$@" ;;
+        grafana-logs)    cmd_grafana_logs "$@" ;;
+        clean)           cmd_clean "$@" ;;
+        help|-h|--help)  usage ;;
+        *)
+            echo "Unknown command: $cmd" >&2
+            usage
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"

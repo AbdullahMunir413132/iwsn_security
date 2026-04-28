@@ -258,6 +258,13 @@ void rule_engine_analyze_flow(rule_engine_t *engine, const flow_stats_t *flow);
 /* Batch analysis (analyze all flows at once) */
 void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dpi_engine);
 
+/*
+ * Quiet mode flag: set to non-zero to suppress progress banners
+ * (e.g., during live-capture periodic analysis every 5 s).
+ * Detection alerts ("ATTACK DETECTED") are still printed regardless.
+ */
+extern int g_rule_engine_quiet;
+
 /* ========== Individual Attack Detection Functions ========== */
 
 /* Volumetric / Flooding */

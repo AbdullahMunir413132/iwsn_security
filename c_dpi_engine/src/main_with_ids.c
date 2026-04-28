@@ -15,6 +15,26 @@
 #include "mqtt_integration.h"
 #include "live_capture.h"
 
+static void live_ids_callback(void *rule_engine_ctx, const parsed_packet_t *packet) {
+    if (rule_engine_ctx && packet) {
+        rule_engine_analyze_packet((rule_engine_t *)rule_engine_ctx, packet);
+    }
+}
+
+static int live_ids_is_blocked(void *rule_engine_ctx, uint32_t ip_address) {
+    if (!rule_engine_ctx) {
+        return 0;
+    }
+    return is_ip_blocked((rule_engine_t *)rule_engine_ctx, ip_address);
+}
+
+static void live_mqtt_callback(void *mqtt_ctx, parsed_packet_t *packet) {
+    (void)mqtt_ctx;
+    if (packet) {
+        parse_mqtt_packet_secure(packet);
+    }
+}
+
 /* ========== Process PCAP File with Attack Detection ========== */
 
 int process_pcap_with_ids(const char *filename, dpi_engine_t *dpi_engine, 
@@ -260,7 +280,13 @@ int main(int argc, char *argv[]) {
         // Enable IDS mode for real-time attack detection
         ctx->ids_mode = 1;
         ctx->rule_engine = rule_engine;
-        ctx->ids_callback = (ids_packet_callback_t)rule_engine_analyze_packet;
+        ctx->ids_callback = live_ids_callback;
+        ctx->ids_is_blocked_callback = live_ids_is_blocked;
+
+        // Enable real-time MQTT parsing for clean packets in the capture loop
+        ctx->mqtt_mode = 1;
+        ctx->mqtt_context = NULL;
+        ctx->mqtt_callback = live_mqtt_callback;
         
         printf("\n[Step 3/4] Starting real-time capture with IDS...\n");
         printf("[INFO] Packets will be analyzed for attacks in real-time\n\n");

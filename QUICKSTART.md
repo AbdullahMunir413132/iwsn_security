@@ -1,79 +1,56 @@
-# Quick Start Guide
+# Quick Start
 
-## Build (one time)
+## 1) Build analyzers
+
 ```bash
-cd c_dpi_engine
-make
+./bin/iwsn build
 ```
 
-## Run Analysis
+## 2) Analyze one PCAP
+
 ```bash
-./bin/dpi_mqtt_analyzer <pcap_file>
+./bin/iwsn analyze scripts/attack_samples/syn_flood.pcap
 ```
 
-## Examples
+## 3) Analyze + generate HTML dashboard
 
-### Analyze attack traffic
 ```bash
-./bin/dpi_mqtt_analyzer ../scripts/attack_samples/syn_flood.pcap
-./bin/dpi_mqtt_analyzer ../scripts/attack_samples/udp_flood.pcap
-./bin/dpi_mqtt_analyzer ../scripts/attack_samples/tcp_syn_scan.pcap
+./bin/iwsn html scripts/attack_samples/syn_flood.pcap
 ```
 
-### Analyze normal traffic
+## 4) Live MQTT capture pipeline
+
 ```bash
-./bin/dpi_mqtt_analyzer ../scripts/pcap_samples/normal_mixed.pcap
-./bin/dpi_mqtt_analyzer ../scripts/pcap_samples/test_100.pcap
+./bin/iwsn live
 ```
 
-## Output Reports
+`live` now prompts for runtime mode selection:
+- `OVS-only` (existing Grafana/OVS workflow unchanged)
+- `OVS + SDN bridge` (pushes live DPI/IDS/MQTT stats to the SDN controller in parallel)
 
-After each run, you get **4 detailed text files**:
+For same-device testing, use defaults:
+- Controller URL: `ws://127.0.0.1:8765`
+- Node IP: `127.0.0.1`
 
-### 1. performance_metrics.txt
-- System overview and metrics summary
-- DPI/IDS/MQTT performance
-- Layer 2-5 parsing success rates
-- Unique protocol detection count
-- Processing time breakdown
-- Detection accuracy (precision/recall/accuracy)
+For multi-node deployments, provide unique node IDs/IPs for each node instance.
 
-### 2. dpi_packets_detailed.txt
-- Every packet with full layer details
-- Layer 2: MAC addresses, EtherType
-- Layer 3: IP addresses, protocol, TTL  
-- Layer 4: Ports, TCP flags, UDP length
-- Layer 5: Flow state (STATELESS/NEW/ESTABLISHED/CLOSING), packets/bytes/duration
-- nDPI protocol detection
-- Timestamps
+## 5) Clean generated artifacts
 
-### 3. dpi_flows_detailed.txt
-- Complete 5-tuple for each flow
-- Packets/bytes/duration statistics
-- TCP details (SYN/FIN/RST counts, connection state)
-- Protocol detection and category
-- Sample packets
-
-### 4. mqtt_packets_detailed.txt
-- MQTT flow and packet statistics
-- Packet type (CONNECT/PUBLISH/SUBSCRIBE/etc.)
-- Payload hex dump + ASCII representation
-- Topics, client IDs, message content
-- Generated even when no MQTT traffic (with helpful info)
-
-## View Reports
 ```bash
-# Quick summary
-cat performance_metrics.txt
-
-# Packet details (all 5 layers)
-less dpi_packets_detailed.txt
-
-# Flow details  
-less dpi_flows_detailed.txt
-
-# MQTT payloads
-less mqtt_packets_detailed.txt
+./bin/iwsn clean
 ```
 
-That's it! Simple analysis with comprehensive reports.
+## Common Input Samples
+
+- scripts/attack_samples/syn_flood.pcap
+- scripts/attack_samples/icmp_flood.pcap
+- scripts/attack_samples/tcp_syn_scan.pcap
+- scripts/pcap_samples/mqtt_normal_traffic.pcap
+
+## Expected Generated Outputs
+
+- c_dpi_engine/performance_metrics.txt
+- c_dpi_engine/dpi_detailed_report.txt
+- c_dpi_engine/ids_detailed_report.txt
+- c_dpi_engine/mqtt_packets_detailed.txt
+- visualization/reports/analysis_report.html

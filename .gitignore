@@ -5,6 +5,14 @@ c_dpi_engine/obj/
 *.so
 *.a
 
+# Python environments and caches
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
 # Logs
 **/*.log
 /tmp/
@@ -12,8 +20,19 @@ c_dpi_engine/obj/
 # Generated reports
 *_report.txt
 performance_metrics.txt
+live_realtime_metrics.txt
+ids_detailed_report.txt
+dpi_detailed_report.txt
+mqtt_packets_detailed.txt
+dpi_flows_detailed.txt
+summary.csv
+scored_summary.csv
+recommendation.txt
 scripts/robustness_test_output/
 c_dpi_engine/test_outputs/
+visualization/reports/*.html
+visualization/reports/*.txt
+!visualization/reports/.gitkeep
 
 # IDE
 .vscode/

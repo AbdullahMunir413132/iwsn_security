@@ -606,15 +606,18 @@ def main():
     if len(sys.argv) > 1:
         base_dir = sys.argv[1]
     else:
-        base_dir = os.path.join(os.path.dirname(__file__), '..', 'c_dpi_engine')
+        base_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'c_dpi_engine')
     
     base_dir = os.path.abspath(base_dir)
-    output_file = os.path.join(base_dir, 'analysis_report.html')
+    reports_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'reports'))
+    os.makedirs(reports_dir, exist_ok=True)
+    output_file = os.path.join(reports_dir, 'analysis_report.html')
     
     print("=" * 80)
     print("🛡️  IWSN Security - HTML Dashboard Generator")
     print("=" * 80)
-    print(f"📂 Reading reports from: {base_dir}\n")
+    print(f"📂 Reading reports from: {base_dir}")
+    print(f"📁 Writing HTML to: {output_file}\n")
     
     generator = HTMLReportGenerator(base_dir)
     generator.parse_reports()

@@ -11,7 +11,7 @@ import signal
 import sys
 import os
 
-BROKER = "localhost"
+BROKER = os.getenv("MQTT_BROKER", "localhost")
 TOPICS = {
     "ultrasonic": "iwsn/sensors/ultrasonic/distance",
     "ir":         "iwsn/sensors/ir/obstacle",

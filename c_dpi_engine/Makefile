@@ -3,7 +3,7 @@
 
 CC = gcc
 CFLAGS = -Wall -Wextra -O2 -g -I./include -I/usr/local/include -I/usr/include -I/usr/include/ndpi
-LDFLAGS = -L/usr/local/lib -L/usr/lib -L/usr/lib/x86_64-linux-gnu -lndpi -lpcap -lm
+LDFLAGS = -L/usr/local/lib -L/usr/lib -L/usr/lib/x86_64-linux-gnu -lndpi -lpcap -lm -lpthread
 
 # Directories
 SRC_DIR = src
@@ -44,6 +44,7 @@ SOURCES_NEW = $(SRC_DIR)/main_new_workflow.c \
               $(SRC_DIR)/dpi_engine_flow.c \
               $(SRC_DIR)/pcap_utils.c \
               $(SRC_DIR)/mqtt_parser.c \
+			  $(SRC_DIR)/mqtt_integration.c \
               $(SRC_DIR)/mqtt_wrapper.c \
               $(SRC_DIR)/rule_engine.c \
               $(SRC_DIR)/rule_engine_attacks.c \

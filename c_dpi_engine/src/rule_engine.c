@@ -17,6 +17,9 @@
 #include <arpa/inet.h>
 #include "rule_engine.h"
 
+/* 0 = verbose (default), 1 = suppress progress banners during live analysis */
+int g_rule_engine_quiet = 0;
+
 /* ========== Engine Initialization ========== */
 
 rule_engine_t* rule_engine_init(void) {
@@ -104,37 +107,77 @@ void rule_engine_set_default_thresholds(rule_engine_t *engine) {
     detection_thresholds_t *t = &engine->thresholds;
     
     /* SYN Flood Detection (RFC 4987)
-     * RFC 4987 §3: SYN floods exploit half-open connection state.
-     * Threshold: 100 SYN/sec is well above normal web traffic baselines. */
-    t->syn_flood_threshold = 100;
-    t->syn_flood_ratio = 3.0;              /* SYN:ACK ratio > 3:1 indicates incomplete handshakes */
-    t->syn_flood_time_window = 10;
+     *
+     * IWSN baseline math:
+     *   4 ESP32 nodes each establish ≤1 MQTT TCP connection; typical reconnect
+     *   cadence is minutes apart → total network SYN rate < 0.1 SYN/s.
+     *
+     * RFC 4987 §3 danger threshold:
+     *   Linux default SYN backlog = 128 (Raspberry Pi default).
+     *   TCP_SYN_RECV state expires after 75 s (net.ipv4.tcp_syn_retries=5).
+     *   Minimum flood rate to fill the backlog: 128/75 ≈ 1.7 SYN/s.
+     *   At the old threshold of 50 SYN/s an attacker had 29+ seconds of
+     *   undetected flooding before the first alert fired.
+     *
+     * IWSN-scaled threshold = 20 SYN/s:
+     *   That is 200× the legitimate baseline and still low enough to catch
+     *   a flood within the first 5-second detection window. */
+    t->syn_flood_threshold = 20;
+    t->syn_flood_ratio = 2.0;    /* SYN:SYN-ACK > 2:1 → half-open backlog growing */
+    t->syn_flood_time_window = 5;
     
-    /* UDP Flood Detection (RFC 4732 §2.1 - Volumetric)
-     * UDP floods target bandwidth exhaustion per RFC 4732. */
-    t->udp_flood_threshold = 200;
-    t->udp_flood_time_window = 10;
-    t->udp_flood_packet_count = 1000;
+    /* UDP Flood Detection (RFC 4732 §2.1)
+     *
+     * IWSN baseline math:
+     *   ESP32 sensors use MQTT over TCP; native UDP traffic is near-zero.
+     *   CoAP (UDP/5683) devices might produce ≤4 pps from 4 nodes combined.
+     *   The port-diversity guard (unique_dst_port_count > 5) already excludes
+     *   single-port sensor bursts, so the rate threshold only fires on
+     *   genuinely scattered UDP floods. 50 pps + port diversity is unambiguous.
+     *
+     * Reducing udp_flood_packet_count to 100 triggers detection within
+     * the first 2 seconds of a 50 pps flood, matching the 5-s window. */
+    t->udp_flood_threshold = 50;
+    t->udp_flood_time_window = 5;
+    t->udp_flood_packet_count = 100;
     
     /* HTTP Flood Detection (RFC 9110 §6 - HTTP Semantics)
-     * Application-layer flood targeting HTTP request processing. */
-    t->http_flood_threshold = 50;
-    t->http_flood_time_window = 10;
-    
-    /* ICMP Flood Detection (RFC 792 - ICMP, RFC 4732)
-     * Volumetric ICMP echo request flood. */
-    t->icmp_flood_threshold = 100;
-    t->icmp_flood_time_window = 10;
+     * Application-layer flood targeting HTTP request processing.
+     * IWSN nodes serve only the /dashboard and FastAPI /api/ endpoints.
+     * Legitimate clients produce ≤2 req/s; 30 req/s is clearly anomalous. */
+    t->http_flood_threshold = 30;
+    t->http_flood_time_window = 5;
+
+    /* ICMP Flood Detection (RFC 792 / RFC 4732)
+     *
+     * IWSN baseline math:
+     *   IWSN nodes have no ICMP-based control traffic; routing is OpenFlow.
+     *   Legitimate ICMP: an operator might run a single ping test = ≤2 pps.
+     *   Routing adjacency ICMP (Unreachable, TTL-exceeded) is rare and burst
+     *   limited (Linux rate-limit: 100/sec kernel-wide, but only during faults).
+     *
+     *   A safe IWSN threshold:
+     *     - ≥3× legit max (2 pps) = 6 pps minimum detection floor
+     *     - +9 pps headroom for routing transients → 15 pps
+     *   A sustained 15 ICMP/s flow in this network has no legitimate cause. */
+    t->icmp_flood_threshold = 15;
+    t->icmp_flood_time_window = 5;
     
     /* Ping of Death Detection (RFC 791 §3.2)
-     * RFC 791: Maximum IP datagram size is 65535 bytes.
-     * Packets exceeding this after reassembly violate protocol. */
-    t->pod_packet_size = 65500;
+     * RFC 791 §3.2: Maximum IP datagram size is 65535 bytes (16-bit Total Length).
+     * Any ICMP packet of exactly 65535 bytes is the maximum possible datagram
+     * and causes overflow on reassembly in vulnerable implementations.
+     * Threshold = 65535 (RFC 791 exact max); detector uses >= operator. */
+    t->pod_packet_size = 65535;
     
     /* ARP Spoofing Detection (RFC 826, RFC 5227)
      * RFC 5227: IPv4 Address Conflict Detection.
-     * Multiple MACs for same IP strongly indicates spoofing. */
-    t->arp_spoofing_mac_changes = 3;
+     * Threshold raised to 6: OVS bridge rewrites source MACs as frames traverse
+     * bridge ports, and WiFi 802.11 4-address forwarding adds an extra MAC layer.
+     * In a 4-node OVS mesh a single IP legitimately appears with 3-4 MACs (node
+     * physical MAC + OVS internal-port MAC + AP MAC).  Threshold 3 caused false
+     * positives on every boot.  6 requires confirmed extra, unexpected MACs. */
+    t->arp_spoofing_mac_changes = 6;
     t->arp_spoofing_time_window = 60;
     
     /* RUDY / Slow POST Detection (RFC 9110 §6.3)
@@ -149,37 +192,59 @@ void rule_engine_set_default_thresholds(rule_engine_t *engine) {
     t->slowloris_min_duration = 30;         /* Connection open > 30 seconds */
     t->slowloris_min_connections = 5;       /* At least 5 slow connections */
     
-    /* Port Scan Detection (General)
-     * Per NIST SP 800-94: scanning detected by unique port access patterns. */
-    t->port_scan_unique_ports = 20;
+    /* Port Scan Detection (NIST SP 800-94 §4.3)
+     *
+     * IWSN baseline math:
+     *   A legitimate node accesses 2-3 destination ports max:
+     *     1883 (MQTT), 8765 (IWSN controller), 22 (SSH management).
+     *   In 60 seconds of normal operation: unique_dst_port_count ≤ 3.
+     *
+     *   Threshold = 8 unique ports:
+     *     Gives 5 ports of headroom above legitimate max (3).
+     *     Any scanner that probes ≥8 distinct ports in 60s is unambiguous.
+     *     At 1 probe/s this triggers within 8 seconds of scan onset. */
+    t->port_scan_unique_ports = 8;
     t->port_scan_time_window = 60;
     t->port_scan_connection_ratio = 0.7;
-    
-    /* TCP Connect Scan Detection */
-    t->tcp_connect_scan_ports = 15;
+
+    /* TCP Connect Scan Detection
+     * Uses the same port threshold as generic scan — in a 4-node IWSN the
+     * distinction between connect-scan and generic scan is the completion
+     * ratio, not the port count. */
+    t->tcp_connect_scan_ports = 8;
     t->tcp_connect_scan_completion = 0.8;
-    
+
     /* Xmas/NULL/FIN Scan Detection (RFC 793 §3.9)
-     * RFC 793 defines specific responses to invalid flag combinations. */
-    t->stealth_scan_port_threshold = 5;
+     * RFC 793 §3.9 specifies that closed ports MUST send RST to any segment
+     * not bearing SYN.  Any combination of Xmas/NULL/FIN flags reaching
+     * ≥3 distinct ports in an IWSN is already a stealth scan. */
+    t->stealth_scan_port_threshold = 3;
     
     /* Smurf Attack Detection (RFC 2827 / BCP 38)
-     * ICMP echo requests to broadcast with spoofed source. */
-    t->smurf_icmp_threshold = 50;
-    
+     * ICMP echo requests to broadcast with spoofed source.
+     * IWSN: 4-node subnet → broadcast domain is tiny. Even 10 reflected
+     * ICMP/s saturates the 11 Mbps ESP32 radio links. */
+    t->smurf_icmp_threshold = 10;
+
     /* Fraggle Attack Detection (RFC 6274)
-     * UDP echo/chargen to broadcast address. */
-    t->fraggle_udp_threshold = 50;
+     * UDP echo/chargen to broadcast address.
+     * Same argument as Smurf — broadcast amplification in a micro-IWSN. */
+    t->fraggle_udp_threshold = 15;
     
     /* DNS Amplification Detection (RFC 5358)
-     * RFC 5358: Large DNS responses from recursive resolvers. */
+     * RFC 5358: Large DNS responses from recursive resolvers.
+     * IWSN context: There are NO legitimate DNS resolvers in a 4-node IWSN.
+     * Any DNS traffic at all is anomalous. Threshold = 5/s (near zero). */
     t->dns_amp_response_size = 512;         /* DNS responses > 512 bytes (RFC 1035 limit) */
-    t->dns_amp_rate_threshold = 50;
+    t->dns_amp_rate_threshold = 5;          /* IWSN: 5/s = near-zero; legit DNS = 0 in IWSN */
     
     /* NTP Amplification Detection (RFC 5905, CVE-2013-5211)
-     * Large NTP responses from monlist command. */
+     * Large NTP responses from monlist command.
+     * IWSN context: ESP32 nodes use SNTP over cellular/external gateway,
+     * never over the mesh radio interface. NTP on the radio interface = 0.
+     * Threshold = 5/s (near-zero; any NTP amplification is an attack). */
     t->ntp_amp_response_size = 468;         /* NTP monlist response size */
-    t->ntp_amp_rate_threshold = 50;
+    t->ntp_amp_rate_threshold = 5;          /* IWSN: 5/s = near-zero; legit NTP = 0 in IWSN */
     
     printf("[Rule Engine] RFC-aligned default thresholds loaded\n");
 }
@@ -472,7 +537,8 @@ void rule_engine_analyze_packet(rule_engine_t *engine, const parsed_packet_t *pa
 /* ========== Batch Flow Analysis ========== */
 
 void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dpi_engine) {
-    printf("\n[Rule Engine] Analyzing %u flows for attacks...\n", dpi_engine->flow_count);
+    if (!g_rule_engine_quiet)
+        printf("\n[Rule Engine] Analyzing %u flows for attacks...\n", dpi_engine->flow_count);
     
     /* Count total packets */
     for (uint32_t i = 0; i < dpi_engine->flow_count; i++) {
@@ -572,17 +638,20 @@ void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dp
         
         add_detection(engine, &detection);
         
-        printf("\n\033[1;31m═══════════════════════════════════════════════════════════════\033[0m\n");
-        printf("\033[1;31m⚠️  CRITICAL: MASSIVE DDoS DETECTED — %u flows!\033[0m\n", dpi_engine->flow_count);
-        printf("\033[1;31m   Primary Target: %s (%u attacks)\033[0m\n",
-               inet_ntoa((struct in_addr){.s_addr = htonl(primary_target)}), max_attacks);
-        printf("\033[1;31m   Attackers: %u+ sources detected\033[0m\n", attacker_count);
-        printf("\033[1;31m═══════════════════════════════════════════════════════════════\033[0m\n\n");
+        if (!g_rule_engine_quiet) {
+            printf("\n\033[1;31m═══════════════════════════════════════════════════════════════\033[0m\n");
+            printf("\033[1;31m⚠️  CRITICAL: MASSIVE DDoS DETECTED — %u flows!\033[0m\n", dpi_engine->flow_count);
+            printf("\033[1;31m   Primary Target: %s (%u attacks)\033[0m\n",
+                   inet_ntoa((struct in_addr){.s_addr = htonl(primary_target)}), max_attacks);
+            printf("\033[1;31m   Attackers: %u+ sources detected\033[0m\n", attacker_count);
+            printf("\033[1;31m═══════════════════════════════════════════════════════════════\033[0m\n\n");
+        }
     }
     
     /* Phase 1: Per-flow analysis */
     if (dpi_engine->flow_count <= 10000) {
-        printf("[Rule Engine] Performing detailed analysis on %u flows...\n", dpi_engine->flow_count);
+        if (!g_rule_engine_quiet)
+            printf("[Rule Engine] Performing detailed analysis on %u flows...\n", dpi_engine->flow_count);
         for (uint32_t i = 0; i < dpi_engine->flow_count; i++) {
             const flow_stats_t *flow = &dpi_engine->flows[i];
             
@@ -618,7 +687,7 @@ void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dp
             
             rule_engine_analyze_flow(engine, flow);
             
-            if ((i + 1) % 500 == 0) {
+            if (!g_rule_engine_quiet && (i + 1) % 500 == 0) {
                 printf("[Rule Engine] Analyzed %u / %u flows (%.1f%% complete)...\n",
                        i + 1, dpi_engine->flow_count,
                        ((float)(i + 1) / dpi_engine->flow_count) * 100.0);
@@ -627,7 +696,8 @@ void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dp
         
         check_and_block_flood_sources(engine);
     } else {
-        printf("[Rule Engine] Sampling analysis (too many flows for full scan)...\n");
+        if (!g_rule_engine_quiet)
+            printf("[Rule Engine] Sampling analysis (too many flows for full scan)...\n");
         uint32_t sample_interval = dpi_engine->flow_count / 1000;
         for (uint32_t i = 0; i < dpi_engine->flow_count; i += sample_interval) {
             rule_engine_analyze_flow(engine, &dpi_engine->flows[i]);
@@ -635,7 +705,8 @@ void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dp
     }
     
     /* Phase 2: Aggregate analysis */
-    printf("\n[Rule Engine] Running aggregate attack detection across all flows...\n");
+    if (!g_rule_engine_quiet)
+        printf("\n[Rule Engine] Running aggregate attack detection across all flows...\n");
     detect_aggregate_syn_flood(engine, dpi_engine);
     
     /* Phase 3: Aggregate volumetric flood detection for distributed attacks */
@@ -723,6 +794,16 @@ void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dp
             uint64_t avg_sz = agg[i].total_pkts > 0 ? agg[i].total_bytes / agg[i].total_pkts : 0;
             
             if (agg[i].protocol == IPPROTO_UDP) {
+                /* Exclude multicast/broadcast destinations — mDNS (224.0.0.251),
+                 * SSDP (239.255.255.250), and similar multicast group traffic
+                 * is normal on an 802.11 mesh LAN and must never be flagged.
+                 * IPv4 multicast: 224.0.0.0/4 → top nibble == 0xE
+                 * IPv4 broadcast: 255.255.255.255
+                 * (IPs stored in host byte order after ntohl in dpi_engine.c)   */
+                int is_multicast = ((agg[i].dst_ip & 0xF0000000U) == 0xE0000000U);
+                int is_broadcast = (agg[i].dst_ip == 0xFFFFFFFFU);
+                if (is_multicast || is_broadcast) goto next_agg;
+
                 if (agg[i].common_src_port == 53 && avg_sz > 200 && agg[i].flow_count > 50) {
                     det.attack_type = ATTACK_DNS_AMPLIFICATION; det.severity = SEVERITY_HIGH;
                     strcpy(det.attack_name, "DNS Amplification Attack");
@@ -757,6 +838,7 @@ void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dp
                     add_detection(engine, &det);
                 }
             }
+            next_agg: ; /* skip multicast/broadcast aggregates */
         }
         
         /* Process scan aggregates (1 source → many unique ports) */
@@ -801,8 +883,9 @@ void rule_engine_analyze_all_flows(rule_engine_t *engine, const dpi_engine_t *dp
         }
     }
     
-    printf("[Rule Engine] Analysis complete. Total attacks detected: %lu\n",
-           engine->total_attacks_detected);
+    if (!g_rule_engine_quiet)
+        printf("[Rule Engine] Analysis complete. Total attacks detected: %lu\n",
+               engine->total_attacks_detected);
 }
 
 void rule_engine_analyze_flow(rule_engine_t *engine, const flow_stats_t *flow) {
@@ -882,7 +965,7 @@ void rule_engine_analyze_flow(rule_engine_t *engine, const flow_stats_t *flow) {
         add_detection(engine, &detection); attack_found = 1;
     }
     
-    if (attack_found) {
+    if (attack_found && !g_rule_engine_quiet) {
         printf("\n┌────────────────────────────────────────────────────────────────┐\n");
         printf("│    ⚠️  ATTACK DETECTED IN FLOW                                     │\n");
         printf("└────────────────────────────────────────────────────────────────┘\n");

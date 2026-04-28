@@ -147,7 +147,21 @@ void update_flow_stats(flow_stats_t *flow, const parsed_packet_t *parsed) {
                 flow->connection_attempts++;
             }
         }
-        if (parsed->layer4.tcp_flags & 0x10) flow->ack_count++;  // ACK
+        /* RFC 4987: SYN+ACK (flags 0x12) is the server-side handshake reply.
+         * Tracking this lets detect_syn_flood() compute genuinely half-open
+         * connections as  half_open = syn_count - syn_ack_count. */
+        if ((parsed->layer4.tcp_flags & 0x12) == 0x12) {  // SYN+ACK
+            flow->syn_ack_count++;
+        }
+        if (parsed->layer4.tcp_flags & 0x10) {
+            flow->ack_count++;  // ACK
+            /* A pure ACK (no SYN) after a SYN-ACK has been seen completes the
+             * 3-way handshake.  Increment established_connections so that the
+             * RUDY and Slowloris detectors can fire. */
+            if (!(parsed->layer4.tcp_flags & 0x02) && flow->syn_ack_count > 0) {
+                flow->established_connections++;
+            }
+        }
         if (parsed->layer4.tcp_flags & 0x01) flow->fin_count++;  // FIN
         if (parsed->layer4.tcp_flags & 0x04) flow->rst_count++;  // RST
     }
@@ -177,6 +191,8 @@ void detect_protocol(dpi_engine_t *engine, parsed_packet_t *parsed) {
     
     // Determine L2 header size from actual datalink type (reliable).
     // For LINUX_SLL: 16 bytes, LINUX_SLL2: 20 bytes, Ethernet: 14 bytes.
+    // For 802.11 Radiotap the offset is variable — use the pre-computed value
+    // stored in parsed->ip_offset during L2 parsing.
     uint32_t offset;
     switch (engine->datalink_type) {
         case DLT_LINUX_SLL2:
@@ -184,6 +200,12 @@ void detect_protocol(dpi_engine_t *engine, parsed_packet_t *parsed) {
             break;
         case DLT_LINUX_SLL:
             offset = 16;
+            break;
+        case DLT_IEEE802_11_RADIO:
+            /* Variable-length Radiotap + 802.11 MAC + LLC/SNAP.
+             * The exact byte offset was computed by parse_ieee80211_radiotap()
+             * and stored in parsed->ip_offset. */
+            offset = parsed->ip_offset;
             break;
         default:  // DLT_EN10MB (Ethernet)
             offset = 14;

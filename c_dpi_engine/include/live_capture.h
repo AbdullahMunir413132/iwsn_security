@@ -27,6 +27,9 @@ typedef struct {
     int promiscuous;              // 1 = promiscuous mode, 0 = normal
     int snap_length;              // Snap length (0 = default 65535)
     int read_timeout_ms;          // Read timeout in milliseconds
+    uint32_t pipeline_queue_capacity; // Per-shard queue capacity for threaded pipeline
+    uint32_t ids_workers;         // IDS worker count (phase 2)
+    uint32_t mqtt_workers;        // MQTT worker count (phase 2)
 } live_capture_config_t;
 
 /* ========== Live Capture Statistics (real-time) ========== */
@@ -46,6 +49,8 @@ typedef struct {
 /* ========== IDS callback function pointer type ========== */
 /* This avoids a hard dependency on rule_engine.h for DPI-only builds */
 typedef void (*ids_packet_callback_t)(void *rule_engine, const parsed_packet_t *packet);
+typedef void (*mqtt_packet_callback_t)(void *mqtt_context, parsed_packet_t *packet);
+typedef int (*ids_is_blocked_callback_t)(void *rule_engine, uint32_t ip_address);
 
 /* ========== Live Capture Context ========== */
 typedef struct {
@@ -58,7 +63,17 @@ typedef struct {
     // Optional IDS integration via callback
     void *rule_engine;                  // Opaque pointer to rule_engine_t
     ids_packet_callback_t ids_callback; // Function to call for per-packet IDS analysis
+    ids_is_blocked_callback_t ids_is_blocked_callback; // Optional callback for blocklist checks
     int ids_mode;                       // 1 if IDS callback is set
+
+    // Optional MQTT integration via callback
+    void *mqtt_context;                    // Opaque pointer for MQTT callback context
+    mqtt_packet_callback_t mqtt_callback;  // Function to call for per-packet MQTT parsing
+    int mqtt_mode;                         // 1 if MQTT callback is set
+
+    // Real-time metrics snapshot settings (for Grafana push watchers)
+    char realtime_metrics_file[256];
+    uint32_t metrics_flush_interval_packets;
 
     // Signal handling for graceful stop
     volatile int stop_requested;

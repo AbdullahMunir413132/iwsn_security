@@ -155,6 +155,84 @@ int parse_linux_sll(const uint8_t *packet, uint32_t packet_len, layer2_info_t *l
     return 0;
 }
 
+/* ========== 802.11 Radiotap Layer 2 Parser ========== */
+/*
+ * parse_ieee80211_radiotap()
+ *
+ * Handles DLT_IEEE802_11_RADIO (value 127) — 802.11 frames captured in monitor
+ * mode, prefixed by a variable-length Radiotap header.
+ *
+ * Radiotap header layout:
+ *   [0]   it_version  (always 0)
+ *   [1]   it_pad
+ *   [2-3] it_len      (LE uint16, total header length including bitmap fields)
+ *
+ * After Radiotap: 802.11 MAC header (24 bytes for 3-address data frames,
+ *   30 bytes for 4-address WDS frames when ToDS=1 and FromDS=1).
+ *
+ * After 802.11 MAC header: 8-byte LLC/SNAP:
+ *   [0] DSAP = 0xAA, [1] SSAP = 0xAA, [2] CTL = 0x03
+ *   [3-5] OUI (0x00 0x00 0x00 for Ethernet-mapped protocols)
+ *   [6-7] EtherType (big-endian)
+ *
+ * Returns 0 on success and sets *l2 and *ip_offset.
+ * Returns -1 if the frame is not an IP-carrying data frame.
+ */
+int parse_ieee80211_radiotap(const uint8_t *packet, uint32_t packet_len,
+                             layer2_info_t *l2, uint32_t *ip_offset)
+{
+    /* Minimum viable frame: 8-byte Radiotap + 24-byte 802.11 hdr + 8-byte LLC/SNAP */
+    if (packet_len < 40) return -1;
+
+    /* Radiotap header length is a little-endian uint16 at bytes 2-3 */
+    uint16_t rt_len = (uint16_t)packet[2] | ((uint16_t)packet[3] << 8);
+    if (rt_len < 8 || rt_len > packet_len) return -1;
+
+    const uint8_t *mac = packet + rt_len;
+    uint32_t mac_remain = packet_len - rt_len;
+    if (mac_remain < 24) return -1;
+
+    /*
+     * Frame Control Word (FCW) is the first 2 bytes of the 802.11 MAC header.
+     *   FCW byte[0] bits[3:2]  = frame type  (0b10 = Data)
+     *   FCW byte[1] bit[0]     = ToDS
+     *   FCW byte[1] bit[1]     = FromDS
+     */
+    uint8_t frame_type = (mac[0] >> 2) & 0x03;
+    if (frame_type != 0x02) return -1;  /* Not a Data frame — skip Mgmt/Ctrl */
+
+    uint8_t to_ds   = (mac[1] >> 0) & 0x01;
+    uint8_t from_ds = (mac[1] >> 1) & 0x01;
+
+    /* 4-address WDS frame has an extra 6-byte Address 4 field */
+    uint32_t mac_hdr_len = (to_ds && from_ds) ? 30u : 24u;
+
+    /* Populate L2 MAC addresses (best-effort):
+     *   Addr1 [4-9]   = Receiver / Destination
+     *   Addr2 [10-15] = Transmitter / Source
+     */
+    memset(l2->src_mac, 0, 6);
+    memset(l2->dst_mac, 0, 6);
+    if (mac_remain >= 16) {
+        memcpy(l2->dst_mac, mac + 4,  6);   /* Addr1 */
+        memcpy(l2->src_mac, mac + 10, 6);   /* Addr2 */
+    }
+
+    /* Validate LLC/SNAP header */
+    if (mac_remain < mac_hdr_len + 8) return -1;
+    const uint8_t *llc = mac + mac_hdr_len;
+    if (llc[0] != 0xAA || llc[1] != 0xAA || llc[2] != 0x03) return -1;
+
+    /* EtherType is at bytes 6-7 of LLC/SNAP (big-endian) */
+    l2->ethertype = ((uint16_t)llc[6] << 8) | llc[7];
+    l2->has_vlan  = 0;
+    l2->vlan_id   = 0;
+
+    /* IP offset = Radiotap header + 802.11 MAC header + 8-byte LLC/SNAP */
+    *ip_offset = rt_len + mac_hdr_len + 8;
+    return 0;
+}
+
 int parse_layer2(const uint8_t *packet, uint32_t packet_len, layer2_info_t *l2) {
     if (packet_len < 14) {
         return -1;  // Too short for any header
@@ -397,6 +475,13 @@ int parse_packet(dpi_engine_t *engine, const uint8_t *packet,
         } else {
             return -1;
         }
+    } else if (engine->datalink_type == DLT_IEEE802_11_RADIO) {
+        // 802.11 monitor-mode capture with Radiotap header
+        if (parse_ieee80211_radiotap(packet, packet_len, &parsed->layer2, &ip_offset) == 0) {
+            engine->l2_parsed++;
+        } else {
+            return -1;  /* Not a data frame or malformed Radiotap — skip */
+        }
     } else {
         // Standard Ethernet (DLT_EN10MB)
         if (parse_layer2(packet, packet_len, &parsed->layer2) == 0) {
@@ -407,6 +492,10 @@ int parse_packet(dpi_engine_t *engine, const uint8_t *packet,
             return -1;
         }
     }
+
+    /* Store the computed IP offset so detect_protocol() can use it for
+     * variable-header-length datalink types (e.g. 802.11 Radiotap). */
+    parsed->ip_offset = ip_offset;
     
     // Validate EtherType before attempting L3+ parsing
     // Only proceed with IPv4 traffic (0x0800) — IPv6 is not supported (requires 128-bit addresses)

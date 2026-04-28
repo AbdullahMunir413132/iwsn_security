@@ -117,9 +117,9 @@ python3 generate_html_dashboard.py ../c_dpi_engine
 
 ## 📄 Generated Files
 
-After running analysis, you'll find these files in `c_dpi_engine/`:
+After running analysis, you'll find generated artifacts in these locations:
 
-- `analysis_report.html` - Interactive HTML dashboard
+- `reports/analysis_report.html` - Interactive HTML dashboard
 - `performance_metrics.txt` - Detailed performance metrics
 - `dpi_detailed_report.txt` - DPI flows and packet details
 - `ids_detailed_report.txt` - Attack detection details
@@ -132,9 +132,9 @@ After running analysis, you'll find these files in `c_dpi_engine/`:
 ### Dashboard doesn't open automatically
 ```bash
 # Manually open the dashboard
-xdg-open ../c_dpi_engine/analysis_report.html
+xdg-open reports/analysis_report.html
 # Or
-firefox ../c_dpi_engine/analysis_report.html
+firefox reports/analysis_report.html
 ```
 
 ### Python script error

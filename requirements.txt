@@ -1,0 +1,29 @@
+# IWSN Security — Node-side Python dependencies
+# Install on each Raspberry Pi:
+#   pip3 install -r requirements.txt
+#
+# System packages also required (install via apt):
+#   sudo apt install -y openvswitch-switch openvswitch-common \
+#                       mosquitto mosquitto-clients \
+#                       libpcap-dev tcpdump \
+#                       make gcc python3-pip
+
+# WebSocket client — used by node_client.py
+websockets==13.1
+
+# Structured logging — used by node_client.py, ovs_telemetry_bridge.py
+loguru==0.7.2
+
+# Async HTTP client — used by ovs_telemetry_bridge.py (ODL RESTCONF polling)
+httpx==0.27.2
+
+# InfluxDB v2 write client — used by ovs_telemetry_bridge.py and push_metrics.py
+# Optional: if omitted, InfluxDB writes are silently disabled
+influxdb-client==1.44.0
+
+# MQTT client — used by mqtt_sensor_bridge.py (sensor values → InfluxDB → Grafana)
+paho-mqtt==2.1.0
+
+# Packet crafting — used by attack_simulator.py (dev/test machine only, not Pi nodes)
+# Comment this out if deploying on Pi nodes that won't run the attack simulator
+scapy==2.6.1

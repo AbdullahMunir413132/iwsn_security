@@ -9,7 +9,7 @@
 
 ### One-Line Command:
 ```bash
-cd html && ./run_analysis_with_html.sh ../scripts/attack_samples/syn_flood.pcap
+cd visualization/html && ./run_analysis_with_html.sh ../scripts/attack_samples/syn_flood.pcap
 ```
 
 ### What you get:
@@ -22,7 +22,7 @@ cd html && ./run_analysis_with_html.sh ../scripts/attack_samples/syn_flood.pcap
 
 ### Output file:
 ```
-c_dpi_engine/analysis_report.html
+../reports/analysis_report.html
 ```
 
 ---
@@ -33,7 +33,7 @@ c_dpi_engine/analysis_report.html
 
 ```bash
 # Attack samples
-cd html
+cd visualization/html
 ./run_analysis_with_html.sh ../scripts/attack_samples/syn_flood.pcap
 ./run_analysis_with_html.sh ../scripts/attack_samples/malware_rudy_attack.pcap
 ./run_analysis_with_html.sh ../scripts/attack_samples/icmp_flood.pcap
@@ -53,11 +53,11 @@ cd c_dpi_engine
 ./bin/dpi_mqtt_analyzer ../scripts/attack_samples/syn_flood.pcap
 
 # 2. Generate HTML dashboard
-cd ../html
+cd ../visualization/html
 python3 generate_html_dashboard.py ../c_dpi_engine
 
 # 3. Open in browser
-xdg-open ../c_dpi_engine/analysis_report.html
+xdg-open ../reports/analysis_report.html
 ```
 cd grafana
 
@@ -122,9 +122,9 @@ python3 push_metrics.py ../c_dpi_engine
 
 **Problem:** Browser doesn't open automatically
 ```bash
-xdg-open ../c_dpi_engine/analysis_report.html
+xdg-open ../reports/analysis_report.html
 # Or
-firefox ../c_dpi_engine/analysis_report.html
+firefox ../reports/analysis_report.html
 ```
 
 **Problem:** No data displayed in dashboard
@@ -142,7 +142,7 @@ cat ../c_dpi_engine/performance_metrics.txt | head -20
 python3 --version
 
 # Run script manually with verbose output
-cd html
+cd visualization/html
 python3 -v generate_html_dashboard.py ../c_dpi_engine
 ```
 
@@ -192,7 +192,7 @@ After analysis, check these files in `c_dpi_engine/`:
 ```bash
 ls -lh ../c_dpi_engine/
 # Should show:
-- analysis_report.html          # Interactive HTML dashboard
+- ../reports/analysis_report.html  # Interactive HTML dashboard
 - performance_metrics.txt       # Detailed metrics
 - dpi_detailed_report.txt       # Flow-by-flow analysis
 - ids_detailed_report.txt       # Attack detection details

@@ -121,6 +121,7 @@ typedef struct {
     // TCP specific
     uint32_t syn_count;
     uint32_t ack_count;
+    uint32_t syn_ack_count;  /* SYN+ACK combined — counts completed server-side handshake replies */
     uint32_t fin_count;
     uint32_t rst_count;
     
@@ -183,7 +184,12 @@ typedef struct parsed_packet_s {
     // Pointer to raw packet data
     const uint8_t *raw_data;
     uint32_t raw_data_len;
-    
+
+    // Byte offset from packet start to the IP header (set during L2 parsing).
+    // Used by detect_protocol() for datalink types with variable-length headers
+    // (e.g. 802.11 Radiotap where the header length is not fixed).
+    uint32_t ip_offset;
+
     // Flow statistics pointer
     flow_stats_t *flow;
     
@@ -244,9 +250,11 @@ int parse_packet(dpi_engine_t *engine, const uint8_t *packet,
                  parsed_packet_t *parsed);
 
 // Layer parsing functions
-int parse_layer2(const uint8_t *packet, uint32_t packet_len, 
+int parse_layer2(const uint8_t *packet, uint32_t packet_len,
                  layer2_info_t *l2);
-int parse_layer3(const uint8_t *packet, uint32_t packet_len, 
+int parse_ieee80211_radiotap(const uint8_t *packet, uint32_t packet_len,
+                             layer2_info_t *l2, uint32_t *ip_offset);
+int parse_layer3(const uint8_t *packet, uint32_t packet_len,
                  layer3_info_t *l3);
 int parse_layer4(const uint8_t *packet, uint32_t packet_len, 
                  const layer3_info_t *l3, layer4_info_t *l4);
