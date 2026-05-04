@@ -219,14 +219,13 @@ void detect_protocol(dpi_engine_t *engine, parsed_packet_t *parsed) {
         return;
     }
     
-    // Process packet with nDPI (nDPI 5.1.0 API)
+    // Process packet with nDPI
     flow->detected_protocol = ndpi_detection_process_packet(
         engine->ndpi,
         flow->ndpi_flow,
         parsed->raw_data + offset,
         parsed->raw_data_len - offset,
-        (uint64_t)parsed->timestamp.tv_sec * 1000 + parsed->timestamp.tv_usec / 1000,
-        NULL  // input_info parameter (new in nDPI 5.x)
+        (uint64_t)parsed->timestamp.tv_sec * 1000 + parsed->timestamp.tv_usec / 1000
     );
     
     // Protocol detection enhancement - force detection after sufficient packets

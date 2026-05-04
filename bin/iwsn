@@ -73,8 +73,19 @@ cmd_build() {
 
 cmd_analyze() {
     need_arg "$@"
-    local pcap="$1"
-    "$ENGINE_DIR/bin/dpi_mqtt_analyzer" "$pcap"
+    local pcap_input="$1"
+    local pcap
+
+    if [[ "$pcap_input" = /* ]]; then
+        pcap="$pcap_input"
+    else
+        pcap="$(realpath -m "$pcap_input")"
+    fi
+
+    (
+        cd "$ENGINE_DIR"
+        ./bin/dpi_mqtt_analyzer "$pcap"
+    )
 
     # After PCAP analysis, push MQTT sensor values to InfluxDB (if available)
     local mqtt_report="$ENGINE_DIR/mqtt_packets_detailed.txt"

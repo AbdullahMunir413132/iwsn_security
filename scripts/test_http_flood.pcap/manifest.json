@@ -1,0 +1,32 @@
+{
+  "generator": "IWSN Attack Simulator v3.0",
+  "timestamp": "2026-04-30 01:50:00",
+  "difficulty": "easy",
+  "noise_percentage": 0,
+  "attacks": [
+    {
+      "name": "http_flood",
+      "file": "scripts/test_http_flood.pcap/http_flood.pcap",
+      "attack_type": "HTTP Flood",
+      "rfc_reference": "RFC 9110, RFC 4732",
+      "attack_packets": 300,
+      "total_packets": 300,
+      "mqtt_packets": 0,
+      "noise_packets": 0,
+      "file_size_bytes": 30624,
+      "expected_detection": true
+    },
+    {
+      "name": "normal_traffic",
+      "file": "scripts/test_http_flood.pcap/normal_traffic.pcap",
+      "attack_type": "None",
+      "rfc_reference": "N/A",
+      "attack_packets": 0,
+      "total_packets": 500,
+      "mqtt_packets": 167,
+      "noise_packets": 500,
+      "file_size_bytes": 42597,
+      "expected_detection": false
+    }
+  ]
+}

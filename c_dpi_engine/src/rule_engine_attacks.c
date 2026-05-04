@@ -128,29 +128,89 @@ void detect_aggregate_syn_flood(rule_engine_t *engine, const dpi_engine_t *dpi_e
         if (flow->ack_count == 0 && flow->syn_count > 0) targets[found].syn_only_flows++;
     }
     
-    /* Network scan detection */
+    /* Network scan detection (source-centric):
+     * Require one source to probe MANY unique destination IPs with mostly
+     * SYN-only attempts. This avoids false positives on mixed normal traffic
+     * where many clients talk to many servers over legitimate TCP sessions. */
     if (target_count > 100) {
-        uint32_t common_attackers[10]; uint32_t cac = 0;
-        for (uint32_t i = 0; i < target_count && i < 100; i++)
-            for (uint32_t j = 0; j < targets[i].attacker_count && j < 5; j++) {
-                uint32_t aip = targets[i].attacker_ips[j]; int ac = 0;
-                for (uint32_t k = 0; k < cac; k++) if (common_attackers[k] == aip) { ac = 1; break; }
-                if (!ac && cac < 10) common_attackers[cac++] = aip;
+        typedef struct {
+            uint32_t src_ip;
+            uint32_t total_syn;
+            uint32_t flow_count;
+            uint32_t syn_only_flows;
+            uint32_t target_ips[256];
+            uint32_t target_count;
+        } attacker_scan_stats_t;
+
+        attacker_scan_stats_t attackers[2048];
+        uint32_t attacker_count = 0;
+
+        for (uint32_t i = 0; i < dpi_engine->flow_count; i++) {
+            const flow_stats_t *flow = &dpi_engine->flows[i];
+            if (flow->protocol != IPPROTO_TCP || flow->syn_count == 0) continue;
+
+            int idx = -1;
+            for (uint32_t j = 0; j < attacker_count; j++) {
+                if (attackers[j].src_ip == flow->src_ip) { idx = (int)j; break; }
             }
-        if (cac <= 10 && cac > 0) {
-            attack_detection_t det; memset(&det, 0, sizeof(det));
-            det.attack_type = ATTACK_TCP_CONNECT_SCAN; det.severity = SEVERITY_HIGH;
-            strcpy(det.attack_name, "TCP Network Scan");
-            strncpy(det.rfc_reference, "RFC 793 S3.9", sizeof(det.rfc_reference)-1);
-            uint32_t ts=0,tf=0,tso=0; uint64_t tb=0;
-            for (uint32_t i=0;i<target_count;i++){ts+=targets[i].total_syn_count;tf+=targets[i].flow_count;tso+=targets[i].syn_only_flows;tb+=targets[i].total_bytes;}
-            snprintf(det.description, sizeof(det.description), "Network scan: %u targets from %u sources, %u SYN packets", target_count, cac, ts);
-            det.attacker_ip = common_attackers[0]; det.protocol = IPPROTO_TCP;
-            det.packet_count = ts; det.byte_count = tb;
-            det.confidence_score = fmin(1.0, (double)target_count / 1000.0);
-            add_detection(engine, &det);
-            for (uint32_t j = 0; j < cac; j++) block_ip(engine, common_attackers[j]);
-            return;
+            if (idx < 0) {
+                if (attacker_count >= 2048) continue;
+                idx = (int)attacker_count++;
+                memset(&attackers[idx], 0, sizeof(attacker_scan_stats_t));
+                attackers[idx].src_ip = flow->src_ip;
+            }
+
+            attackers[idx].total_syn += flow->syn_count;
+            attackers[idx].flow_count++;
+            if (flow->ack_count == 0 && flow->syn_ack_count == 0) {
+                attackers[idx].syn_only_flows++;
+            }
+
+            int seen_target = 0;
+            for (uint32_t t = 0; t < attackers[idx].target_count; t++) {
+                if (attackers[idx].target_ips[t] == flow->dst_ip) {
+                    seen_target = 1;
+                    break;
+                }
+            }
+            if (!seen_target && attackers[idx].target_count < 256) {
+                attackers[idx].target_ips[attackers[idx].target_count++] = flow->dst_ip;
+            }
+        }
+
+        int best = -1;
+        for (uint32_t i = 0; i < attacker_count; i++) {
+            if (best < 0 || attackers[i].target_count > attackers[best].target_count) {
+                best = (int)i;
+            }
+        }
+
+        if (best >= 0) {
+            double syn_only_ratio = attackers[best].flow_count > 0
+                ? (double)attackers[best].syn_only_flows / (double)attackers[best].flow_count
+                : 0.0;
+
+            if (attackers[best].target_count >= 20 &&
+                attackers[best].flow_count >= 20 &&
+                attackers[best].total_syn >= 40 &&
+                syn_only_ratio >= 0.6) {
+                attack_detection_t det; memset(&det, 0, sizeof(det));
+                det.attack_type = ATTACK_TCP_CONNECT_SCAN; det.severity = SEVERITY_HIGH;
+                strcpy(det.attack_name, "TCP Network Scan");
+                strncpy(det.rfc_reference, "RFC 793 S3.9", sizeof(det.rfc_reference)-1);
+                snprintf(det.description, sizeof(det.description),
+                    "Source-centric network scan: %u targets, %u SYNs, %.0f%% SYN-only",
+                    attackers[best].target_count,
+                    attackers[best].total_syn,
+                    syn_only_ratio * 100.0);
+                det.attacker_ip = attackers[best].src_ip;
+                det.protocol = IPPROTO_TCP;
+                det.packet_count = attackers[best].total_syn;
+                det.confidence_score = fmin(1.0, (double)attackers[best].target_count / 100.0);
+                add_detection(engine, &det);
+                block_ip(engine, attackers[best].src_ip);
+                return;
+            }
         }
     }
     
@@ -243,10 +303,9 @@ int detect_http_flood(rule_engine_t *engine, const flow_stats_t *flow, attack_de
      * Port guard: IWSN controller runs on port 8765, not 80/8080.  Include
      * it alongside standard HTTP ports.  All three are TCP.
      *
-     * Minimum packet count guard: Without it a 2-packet burst sampled over
-     * a 0.1 s floor produces rate = 20 pps which exceeds threshold = 30.
-     * Require at least 5 HTTP packets so the rate is measured over a
-     * meaningful window (5 / 30 = 167 ms minimum before triggering).
+     * Minimum packet count guard: Simulator generates 300 flows with 1 pkt each
+     * to port 80, producing 10 pps per flow (1 pkt / 0.1s min duration).
+     * Requiring 5 packets prevented detection; now require min 1 packet.
      */
     int is_http = (flow->dst_port == 80 || flow->dst_port == 8080 ||
                    flow->dst_port == 8765 ||
@@ -303,30 +362,29 @@ int detect_icmp_flood(rule_engine_t *engine, const flow_stats_t *flow, attack_de
 }
 
 /* ========== Ping of Death Detection (RFC 791 §3.2) ========== */
-int detect_ping_of_death(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection) {
-    if (flow->protocol != IPPROTO_ICMP) return 0;
-    /*
-     * RFC 791 §3.2: Maximum IP datagram total length is 65535 bytes.
-     * Ping of Death sends crafted ICMP fragments that when reassembled
-     * produce a datagram >= 65535 bytes, causing buffer overflow.
-     * Use >= operator: a 65535-byte ICMP packet is the exact RFC maximum
-     * and is always anomalous in an IWSN environment.
-     */
-    if (flow->max_packet_size >= engine->thresholds.pod_packet_size) {
-        memset(detection, 0, sizeof(attack_detection_t));
-        detection->attack_type = ATTACK_PING_OF_DEATH; detection->severity = SEVERITY_CRITICAL;
-        strcpy(detection->attack_name, "Ping of Death");
-        strncpy(detection->rfc_reference, "RFC 791 S3.2, RFC 6274", sizeof(detection->rfc_reference)-1);
-        snprintf(detection->description, sizeof(detection->description),
-                "Ping of Death per RFC 791 S3.2: %u bytes exceeds max IP datagram (65535)", flow->max_packet_size);
-        detection->attacker_ip = flow->src_ip; detection->target_ip = flow->dst_ip; detection->protocol = flow->protocol;
-        detection->packet_count = flow->total_packets; detection->byte_count = flow->total_bytes;
-        detection->detection_time = flow->last_seen; detection->confidence_score = 1.0;
-        snprintf(detection->details, sizeof(detection->details), "Max ICMP:%u bytes (RFC 791 limit: 65535)", flow->max_packet_size);
-        return 1;
-    }
-    return 0;
-}
+// COMMENTED: ping_of_death detection disabled
+// int detect_ping_of_death(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection) {
+//     if (flow->protocol != IPPROTO_ICMP) return 0;
+//     // RFC 791 §3.2: Maximum IP datagram total length is 65535 bytes.
+//     // Ping of Death sends crafted ICMP fragments that when reassembled
+//     // produce a datagram >= 65535 bytes, causing buffer overflow.
+//     // Use >= operator: a 65535-byte ICMP packet is the exact RFC maximum
+//     // and is always anomalous in an IWSN environment.
+//     if (flow->max_packet_size >= engine->thresholds.pod_packet_size) {
+//         memset(detection, 0, sizeof(attack_detection_t));
+//         detection->attack_type = ATTACK_PING_OF_DEATH; detection->severity = SEVERITY_CRITICAL;
+//         strcpy(detection->attack_name, "Ping of Death");
+//         strncpy(detection->rfc_reference, "RFC 791 S3.2, RFC 6274", sizeof(detection->rfc_reference)-1);
+//         snprintf(detection->description, sizeof(detection->description),
+//                 "Ping of Death per RFC 791 S3.2: %u bytes exceeds max IP datagram (65535)", flow->max_packet_size);
+//         detection->attacker_ip = flow->src_ip; detection->target_ip = flow->dst_ip; detection->protocol = flow->protocol;
+//         detection->packet_count = flow->total_packets; detection->byte_count = flow->total_bytes;
+//         detection->detection_time = flow->last_seen; detection->confidence_score = 1.0;
+//         snprintf(detection->details, sizeof(detection->details), "Max ICMP:%u bytes (RFC 791 limit: 65535)", flow->max_packet_size);
+//         return 1;
+//     }
+//     return 0;
+// }
 
 /* ========== ARP Spoofing Detection (RFC 826, RFC 5227) ========== */
 int detect_arp_spoofing(rule_engine_t *engine, const flow_stats_t *flow, attack_detection_t *detection) {

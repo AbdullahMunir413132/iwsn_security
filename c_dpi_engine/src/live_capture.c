@@ -578,6 +578,45 @@ static void live_capture_write_metrics_snapshot(const live_capture_ctx_t *ctx) {
     memset(&mqtt_stats, 0, sizeof(mqtt_stats));
     mqtt_get_statistics(&mqtt_stats);
 
+    /* Real-time protocol distribution (packet-weighted per current flows) */
+    uint64_t pd_tcp = 0;
+    uint64_t pd_udp = 0;
+    uint64_t pd_icmp = 0;
+    uint64_t pd_http = 0;
+    uint64_t pd_https = 0;
+    uint64_t pd_dns = 0;
+    uint64_t pd_mqtt = 0;
+    uint64_t pd_tls = 0;
+    uint64_t pd_unknown = 0;
+
+    if (ctx->dpi_engine) {
+        for (uint32_t i = 0; i < ctx->dpi_engine->flow_count; i++) {
+            const flow_stats_t *flow = &ctx->dpi_engine->flows[i];
+            uint64_t weight = flow->total_packets;
+            const char *pname = flow->protocol_name;
+
+            if (weight == 0) continue;
+
+            if (pname && pname[0] != '\0' && strcasecmp(pname, "Unknown") != 0) {
+                if (strcasestr(pname, "MQTT"))  { pd_mqtt += weight; continue; }
+                if (strcasestr(pname, "DNS"))   { pd_dns += weight;  continue; }
+                if (strcasestr(pname, "HTTPS")) { pd_https += weight; continue; }
+                if (strcasestr(pname, "HTTP"))  { pd_http += weight; continue; }
+                if (strcasestr(pname, "TLS") || strcasestr(pname, "SSL")) {
+                    pd_tls += weight;
+                    continue;
+                }
+            }
+
+            switch (flow->protocol) {
+                case IPPROTO_TCP:  pd_tcp += weight; break;
+                case IPPROTO_UDP:  pd_udp += weight; break;
+                case IPPROTO_ICMP: pd_icmp += weight; break;
+                default:           pd_unknown += weight; break;
+            }
+        }
+    }
+
     /* Collect per-attack-type counts from the rule engine for real-time panels */
     uint64_t at_syn_flood         = 0;
     uint64_t at_udp_flood         = 0;
@@ -655,6 +694,17 @@ static void live_capture_write_metrics_snapshot(const live_capture_ctx_t *ctx) {
             "    \"l4_parsed\": %lu,\n"
             "    \"l5_parsed\": %lu\n"
             "  },\n"
+            "  \"protocol_distribution\": {\n"
+            "    \"tcp\": %lu,\n"
+            "    \"udp\": %lu,\n"
+            "    \"icmp\": %lu,\n"
+            "    \"http\": %lu,\n"
+            "    \"https\": %lu,\n"
+            "    \"dns\": %lu,\n"
+            "    \"mqtt\": %lu,\n"
+            "    \"tls\": %lu,\n"
+            "    \"unknown\": %lu\n"
+            "  },\n"
             "  \"ids\": {\n"
             "    \"packets_analyzed\": %lu,\n"
             "    \"attacks_detected\": %lu,\n"
@@ -707,6 +757,15 @@ static void live_capture_write_metrics_snapshot(const live_capture_ctx_t *ctx) {
             ctx->dpi_engine->l3_parsed,
             ctx->dpi_engine->l4_parsed,
             ctx->dpi_engine->l5_parsed,
+            pd_tcp,
+            pd_udp,
+            pd_icmp,
+            pd_http,
+            pd_https,
+            pd_dns,
+            pd_mqtt,
+            pd_tls,
+            pd_unknown,
             ids_packets,
             ids_attacks,
             ids_blocked_ips,
@@ -1230,7 +1289,14 @@ int live_capture_start(live_capture_ctx_t *ctx) {
     printf("─────────────────────────────────────────────────────────────\n");
 
     /* ===== Main Capture Loop ===== */
+    time_t last_snapshot_write_time = 0;
     while (!g_live_capture_stop) {
+        time_t now_loop = time(NULL);
+        if (now_loop - last_snapshot_write_time >= 5) {
+            live_capture_write_metrics_snapshot(ctx);
+            last_snapshot_write_time = now_loop;
+        }
+
         // Check duration limit
         if (deadline > 0 && time(NULL) >= deadline) {
             printf("\n[LIVE CAPTURE] Duration limit reached (%u seconds).\n",
